@@ -183,7 +183,7 @@ export default function AdminPortal() {
   };
 
   // ── Forms ──────────────────────────────────────────────────
-  const [newComp, setNewComp] = useState({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "" });
+  const [newComp, setNewComp] = useState({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "" });
   const [newTeam, setNewTeam] = useState({ name: "", pin: "" });
   const [newPlayer, setNewPlayer] = useState({ name: "", handicap: "", company: "", email: "", slot: "0" });
   const [newCourse, setNewCourse] = useState({ name: "", location: "", par: "72", rating: "70.0", slope: "125" });
@@ -194,14 +194,33 @@ export default function AdminPortal() {
   const createComp = async () => {
     if (!newComp.name) return;
     try {
-      // Need an admin_id — use a placeholder for now
       const data = { ...newComp, admin_id: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65", handicap_allowance: parseFloat(newComp.handicap_allowance) };
+      const courseId = data.course_id;
+      delete data.course_id;
       const res = await sb.post("competitions", [data]);
-      setCompetitions(prev => [res[0], ...prev]);
-      setActiveComp(res[0]);
+      const comp = res[0];
+      // Link the course if selected
+      if (courseId) {
+        await sb.post("competition_courses", [{ competition_id: comp.id, course_id: courseId, day: 1 }]);
+      }
+      setCompetitions(prev => [comp, ...prev]);
+      setActiveComp(comp);
       setShowNewComp(false);
-      setNewComp({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "" });
+      setNewComp({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "" });
       showToast("Competition created!");
+    } catch(e) { showToast(e.message, "error"); }
+  };
+
+  const createCourse = async () => {
+    if (!newCourse.name) return;
+    try {
+      // Build 18 holes with default par 4 and SI 1-18
+      const holes = Array.from({length:18}, (_,i) => ({ h: i+1, par: 4, si: i+1 }));
+      const res = await sb.post("courses", [{ ...newCourse, par: parseInt(newCourse.par), rating: parseFloat(newCourse.rating), slope: parseInt(newCourse.slope), holes, added_by: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65" }]);
+      setCourses(prev => [...prev, res[0]]);
+      setShowNewCourse(false);
+      setNewCourse({ name: "", location: "", par: "72", rating: "70.0", slope: "125" });
+      showToast("Course added! Edit hole par/SI values in Supabase if needed.");
     } catch(e) { showToast(e.message, "error"); }
   };
 
@@ -692,6 +711,8 @@ export default function AdminPortal() {
             <Inp label="Handicap Allowance" value={newComp.handicap_allowance} onChange={v => setNewComp(p => ({...p, handicap_allowance: v}))} placeholder="0.75" />
           )}
           <Inp label="Notes" value={newComp.notes} onChange={v => setNewComp(p => ({...p, notes: v}))} placeholder="Any additional info..." />
+          <Sel label="Course" value={newComp.course_id} onChange={v => setNewComp(p => ({...p, course_id: v}))}
+            options={[{ value: "", label: "— Select a course —" }, ...courses.map(c => ({ value: c.id, label: `${c.name} (Par ${c.par})` }))]} />
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
             <Btn onClick={() => setShowNewComp(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createComp}>Create Competition</Btn>
@@ -761,6 +782,26 @@ export default function AdminPortal() {
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
             <Btn onClick={() => setShowSponsor(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createSponsoredHole}>Add Sponsor</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* New Course */}
+      {showNewCourse && (
+        <Modal title="Add Course to Library" onClose={() => setShowNewCourse(false)} width={480}>
+          <Inp label="Course Name" value={newCourse.name} onChange={v => setNewCourse(p => ({...p, name: v}))} placeholder="e.g. Castle Golf Club" required />
+          <Inp label="Location" value={newCourse.location} onChange={v => setNewCourse(p => ({...p, location: v}))} placeholder="e.g. Rathfarnham, Dublin" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+            <Inp label="Par" value={newCourse.par} onChange={v => setNewCourse(p => ({...p, par: v}))} type="number" placeholder="72" />
+            <Inp label="Rating" value={newCourse.rating} onChange={v => setNewCourse(p => ({...p, rating: v}))} placeholder="70.0" />
+            <Inp label="Slope" value={newCourse.slope} onChange={v => setNewCourse(p => ({...p, slope: v}))} type="number" placeholder="125" />
+          </div>
+          <div style={{ padding: "10px 14px", background: T.navyMd, borderRadius: 8, fontSize: 12, color: T.textMd, marginBottom: 16 }}>
+            ℹ️ Holes will be created with default values (Par 4, SI 1-18). You can edit exact par and SI values in Supabase afterwards.
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+            <Btn onClick={() => setShowNewCourse(false)} variant="secondary">Cancel</Btn>
+            <Btn onClick={createCourse}>Add Course</Btn>
           </div>
         </Modal>
       )}
