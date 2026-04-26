@@ -1,652 +1,252 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 
-// ─── SUPABASE ────────────────────────────────────────────────────────────────
 const SB_URL = "https://mggtvitmicbzytklmkmm.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1nZ3R2aXRtaWNienl0a2xta21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMTg3NzAsImV4cCI6MjA5Mjc5NDc3MH0.H4ulHFHJQQ_5wvMLdzBrlqBi89SFCiNxuvLNQ9vX-5A";
+const ADMIN_ID = "17b85d21-02a3-492d-bbcc-9b4adc8a6e65";
 
 const sb = {
   h: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation" },
-  async get(table, q = "") {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { headers: this.h });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async post(table, data) {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method: "POST", headers: { ...this.h, "Prefer": "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(data) });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async patch(table, id, data) {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "PATCH", headers: this.h, body: JSON.stringify(data) });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async del(table, id) {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "DELETE", headers: this.h });
-    if (!r.ok) throw new Error(await r.text());
-  },
+  async get(table, q = "") { const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { headers: this.h }); if (!r.ok) throw new Error(await r.text()); return r.json(); },
+  async post(table, data) { const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method: "POST", headers: { ...this.h, "Prefer": "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(data) }); if (!r.ok) throw new Error(await r.text()); return r.json(); },
+  async patch(table, id, data) { const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "PATCH", headers: this.h, body: JSON.stringify(data) }); if (!r.ok) throw new Error(await r.text()); return r.json(); },
+  async del(table, id) { const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method: "DELETE", headers: this.h }); if (!r.ok) throw new Error(await r.text()); },
 };
 
-// ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
 const T = {
-  navy:    "#0F1E36",
-  navyMd:  "#1B2E4A",
-  navyLt:  "#243656",
-  blue:    "#1B4B8A",
-  blueLt:  "#2563EB",
-  red:     "#E8422A",
-  redLt:   "#FEE2DC",
-  green:   "#16A34A",
-  greenLt: "#DCFCE7",
-  amber:   "#D97706",
-  amberLt: "#FEF3C7",
-  white:   "#FFFFFF",
-  text:    "#F1F5F9",
-  textMd:  "#94A3B8",
-  textDk:  "#64748B",
-  border:  "#1E3354",
-  card:    "#162440",
-  input:   "#0D1829",
+  navy:"#0F1E36",navyMd:"#1B2E4A",navyLt:"#243656",blue:"#1B4B8A",
+  red:"#E8422A",redLt:"#FEE2DC",green:"#16A34A",greenLt:"#DCFCE7",
+  amber:"#D97706",amberLt:"#FEF3C7",white:"#FFFFFF",text:"#F1F5F9",
+  textMd:"#94A3B8",textDk:"#64748B",border:"#1E3354",card:"#162440",input:"#0D1829",
 };
 
-const fmt = n => n == null ? "–" : n;
-const pill = (label, bg, color="#fff") => (
-  <span style={{ background: bg, color, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, letterSpacing: 0.3 }}>{label}</span>
-);
-const statusPill = s => {
-  const map = { draft: [T.amber, T.amberLt, "#78350f"], live: [T.green, T.greenLt, "#14532d"], finished: [T.textDk, "#1e293b", T.textMd] };
-  const [bg, bgLt, col] = map[s] || [T.textDk, "#1e293b", T.textMd];
-  return <span style={{ background: bgLt, color: col, padding: "3px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, border: `1px solid ${bg}33` }}>{s.toUpperCase()}</span>;
-};
+const statusPill = s => { const m={draft:["#78350f","#FEF3C7",T.amber],live:["#14532d","#DCFCE7",T.green],finished:[T.textDk,"#1e293b",T.textMd]}; const[col,bg]=m[s]||[T.textDk,"#1e293b"]; return <span style={{background:bg,color:col,padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700}}>{s.toUpperCase()}</span>; };
 
-// ─── SHARED UI ────────────────────────────────────────────────────────────────
-const Inp = ({ label, value, onChange, type = "text", placeholder = "", required = false, style = {} }) => (
-  <div style={{ marginBottom: 16, ...style }}>
-    {label && <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textMd, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}{required && <span style={{ color: T.red }}> *</span>}</label>}
-    <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-      style={{ width: "100%", background: T.input, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 14px", color: T.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-  </div>
-);
+const Inp=({label,value,onChange,type="text",placeholder="",required=false})=>(<div style={{marginBottom:14}}>{label&&<label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{label}{required&&<span style={{color:T.red}}> *</span>}</label>}<input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",color:T.text,fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/></div>);
 
-const Sel = ({ label, value, onChange, options, style = {} }) => (
-  <div style={{ marginBottom: 16, ...style }}>
-    {label && <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textMd, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</label>}
-    <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ width: "100%", background: T.input, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 14px", color: T.text, fontSize: 14, fontFamily: "inherit", outline: "none", appearance: "none" }}>
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  </div>
-);
+const Sel=({label,value,onChange,options})=>(<div style={{marginBottom:14}}>{label&&<label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{label}</label>}<select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",color:T.text,fontSize:14,fontFamily:"inherit",outline:"none",appearance:"none"}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>);
 
-const Btn = ({ children, onClick, variant = "primary", disabled = false, small = false }) => {
-  const bg = variant === "primary" ? T.blue : variant === "danger" ? T.red : variant === "success" ? T.green : T.navyLt;
-  return (
-    <button onClick={onClick} disabled={disabled}
-      style={{ background: disabled ? T.navyLt : bg, color: T.white, border: "none", borderRadius: 8, padding: small ? "6px 14px" : "10px 20px", fontSize: small ? 12 : 14, fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: disabled ? 0.5 : 1, transition: "all 0.15s", whiteSpace: "nowrap" }}>
-      {children}
-    </button>
-  );
-};
+const Btn=({children,onClick,variant="primary",disabled=false,small=false})=>{const bg={primary:T.blue,danger:T.red,success:T.green,secondary:T.navyLt,amber:T.amber}[variant]||T.blue;return <button onClick={onClick} disabled={disabled} style={{background:disabled?T.navyLt:bg,color:T.white,border:"none",borderRadius:8,padding:small?"6px 14px":"10px 20px",fontSize:small?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",opacity:disabled?0.5:1,whiteSpace:"nowrap"}}>{children}</button>;};
 
-const Modal = ({ title, onClose, children, width = 560 }) => (
-  <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}
-    onClick={onClose}>
-    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, width, maxHeight: "85vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.5)" }}
-      onClick={e => e.stopPropagation()}>
-      <div style={{ padding: "20px 24px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontWeight: 800, fontSize: 18, color: T.text }}>{title}</div>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: T.textMd, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
-      </div>
-      <div style={{ padding: 24 }}>{children}</div>
-    </div>
-  </div>
-);
+const Modal=({title,onClose,children,width=560})=>(<div style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}><div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width,maxHeight:"85vh",overflow:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}><div style={{padding:"18px 24px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:800,fontSize:17,color:T.text}}>{title}</div><button onClick={onClose} style={{background:"none",border:"none",color:T.textMd,fontSize:20,cursor:"pointer"}}>✕</button></div><div style={{padding:24}}>{children}</div></div></div>);
 
-const Card = ({ children, style = {} }) => (
-  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, ...style }}>{children}</div>
-);
+const Card=({children,style={}})=>(<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,...style}}>{children}</div>);
+const Stat=({label,value,sub,color=T.blue})=>(<div style={{background:T.navyMd,borderRadius:10,padding:"16px 20px",border:`1px solid ${T.border}`}}><div style={{fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:32,fontWeight:900,color,lineHeight:1}}>{value}</div>{sub&&<div style={{fontSize:11,color:T.textDk,marginTop:4}}>{sub}</div>}</div>);
+const Tab=({label,active,onClick,badge})=>(<button onClick={onClick} style={{padding:"10px 20px",border:"none",background:"none",borderBottom:`3px solid ${active?T.blue:"transparent"}`,color:active?T.white:T.textMd,fontWeight:active?700:400,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{label}{badge!=null?<span style={{marginLeft:6,background:T.blue,color:T.white,borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>{badge}</span>:""}</button>);
 
-const Stat = ({ label, value, sub, color = T.blue }) => (
-  <div style={{ background: T.navyMd, borderRadius: 10, padding: "16px 20px", border: `1px solid ${T.border}` }}>
-    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMd, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-    <div style={{ fontSize: 32, fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
-    {sub && <div style={{ fontSize: 11, color: T.textDk, marginTop: 4 }}>{sub}</div>}
-  </div>
-);
-
-// ─── ADMIN APP ────────────────────────────────────────────────────────────────
 export default function AdminPortal() {
-  const [view,          setView]          = useState("dashboard");
-  const [competitions,  setCompetitions]  = useState([]);
-  const [courses,       setCourses]       = useState([]);
-  const [activeComp,    setActiveComp]    = useState(null);
-  const [teams,         setTeams]         = useState([]);
-  const [players,       setPlayers]       = useState([]);
-  const [matches,       setMatches]       = useState([]);
-  const [auctionItems,  setAuctionItems]  = useState([]);
-  const [auctionBids,   setAuctionBids]   = useState([]);
-  const [scores,        setScores]        = useState([]);
-  const [sponsoredHoles,setSponsoredHoles]= useState([]);
-  const [loading,       setLoading]       = useState(false);
-  const [toast,         setToast]         = useState(null);
+  const [nav,setNav]=useState("dashboard");
+  const [competitions,setCompetitions]=useState([]);
+  const [courses,setCourses]=useState([]);
+  const [selectedComp,setSelectedComp]=useState(null);
+  const [compTab,setCompTab]=useState("teams");
+  const [teams,setTeams]=useState([]);
+  const [players,setPlayers]=useState([]);
+  const [auctionItems,setAuctionItems]=useState([]);
+  const [auctionBids,setAuctionBids]=useState([]);
+  const [scores,setScores]=useState([]);
+  const [sponsoredHoles,setSponsoredHoles]=useState([]);
+  const [toast,setToast]=useState(null);
+  const [showNewComp,setShowNewComp]=useState(false);
+  const [showNewCourse,setShowNewCourse]=useState(false);
+  const [editCourse,setEditCourse]=useState(null);
+  const [showNewTeam,setShowNewTeam]=useState(false);
+  const [showNewPlayer,setShowNewPlayer]=useState(null);
+  const [showNewItem,setShowNewItem]=useState(false);
+  const [showNewSponsor,setShowNewSponsor]=useState(false);
+  const [newComp,setNewComp]=useState({name:"",location:"",format:"scramble",start_date:"",end_date:"",notes:"",course_id:"",course_ids:["","","",""]});
+  const [newCourse,setNewCourse]=useState({name:"",location:"",par:"70",rating:"69.0",slope:"120"});
+  const [newTeam,setNewTeam]=useState({name:"",pin:""});
+  const [newPlayer,setNewPlayer]=useState({name:"",handicap:"",company:"",email:""});
+  const [newItem,setNewItem]=useState({title:"",description:"",emoji:"🏆",start_bid:"",closes_at:"17:30"});
+  const [newSponsor,setNewSponsor]=useState({hole_index:"2",type:"nearest_pin",sponsor_name:"",sponsor_color:"#2563eb",prize_desc:""});
 
-  // Modals
-  const [showNewComp,   setShowNewComp]   = useState(false);
-  const [showNewTeam,   setShowNewTeam]   = useState(false);
-  const [showNewPlayer, setShowNewPlayer] = useState(null); // team
-  const [showNewCourse, setShowNewCourse] = useState(false);
-  const [showNewItem,   setShowNewItem]   = useState(false);
-  const [showSponsor,   setShowSponsor]   = useState(false);
-  const [editTeam,      setEditTeam]      = useState(null);
+  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
 
-  const showToast = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+  useEffect(()=>{loadBase();},[]);
+  useEffect(()=>{if(selectedComp)loadCompDetail(selectedComp.id);},[selectedComp]);
+
+  const loadBase=async()=>{
+    try{const[comps,crs]=await Promise.all([sb.get("competitions","select=*&order=created_at.desc"),sb.get("courses","select=*&order=name")]);setCompetitions(comps);setCourses(crs);}
+    catch(e){showToast(e.message,"error");}
   };
 
-  // ── Load data ──────────────────────────────────────────────
-  useEffect(() => { loadAll(); }, []);
-
-  const loadAll = async () => {
-    setLoading(true);
-    try {
-      const [comps, crs] = await Promise.all([
-        sb.get("competitions", "select=*&order=created_at.desc"),
-        sb.get("courses", "select=*&order=name"),
-      ]);
-      setCompetitions(comps);
-      setCourses(crs);
-      if (comps.length > 0 && !activeComp) setActiveComp(comps[0]);
-    } catch(e) { showToast(e.message, "error"); }
-    setLoading(false);
+  const loadCompDetail=async(compId)=>{
+    try{const[t,p,ai,ab,sc,sh]=await Promise.all([sb.get("teams",`select=*&competition_id=eq.${compId}&order=name`),sb.get("players",`select=*&competition_id=eq.${compId}&order=name`),sb.get("auction_items",`select=*&competition_id=eq.${compId}&order=sort_order`),sb.get("auction_bids",`select=*&competition_id=eq.${compId}&order=placed_at.desc`),sb.get("scores",`select=*&competition_id=eq.${compId}`),sb.get("sponsored_holes",`select=*&competition_id=eq.${compId}&order=hole_index`)]);
+    setTeams(t);setPlayers(p);setAuctionItems(ai);setAuctionBids(ab);setScores(sc);setSponsoredHoles(sh);}
+    catch(e){showToast(e.message,"error");}
   };
 
-  useEffect(() => {
-    if (activeComp) loadCompData(activeComp.id);
-  }, [activeComp]);
-
-  const loadCompData = async (compId) => {
-    try {
-      const [t, p, m, ai, ab, sc, sh] = await Promise.all([
-        sb.get("teams", `select=*&competition_id=eq.${compId}&order=name`),
-        sb.get("players", `select=*&competition_id=eq.${compId}&order=name`),
-        sb.get("matches", `select=*&competition_id=eq.${compId}&order=day,match_number`),
-        sb.get("auction_items", `select=*&competition_id=eq.${compId}&order=sort_order`),
-        sb.get("auction_bids", `select=*&competition_id=eq.${compId}&order=placed_at.desc`),
-        sb.get("scores", `select=*&competition_id=eq.${compId}`),
-        sb.get("sponsored_holes", `select=*&competition_id=eq.${compId}&order=hole_index`),
-      ]);
-      setTeams(t); setPlayers(p); setMatches(m);
-      setAuctionItems(ai); setAuctionBids(ab);
-      setScores(sc); setSponsoredHoles(sh);
-    } catch(e) { showToast(e.message, "error"); }
-  };
-
-  // ── Forms ──────────────────────────────────────────────────
-  const [newComp, setNewComp] = useState({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "", course_ids: [] });
-  const [newTeam, setNewTeam] = useState({ name: "", pin: "" });
-  const [newPlayer, setNewPlayer] = useState({ name: "", handicap: "", company: "", email: "", slot: "0" });
-  const [newCourse, setNewCourse] = useState({ name: "", location: "", par: "72", rating: "70.0", slope: "125" });
-  const [editCourse, setEditCourse] = useState(null);
-  const [newItem, setNewItem] = useState({ title: "", description: "", emoji: "🏆", start_bid: "", closes_at: "17:30", sort_order: "0" });
-  const [newSponsor, setNewSponsor] = useState({ hole_index: "0", type: "nearest_pin", sponsor_name: "", sponsor_color: "#2563eb", prize_desc: "" });
-
-  // ── CRUD ───────────────────────────────────────────────────
-  const createComp = async () => {
-    if (!newComp.name) return;
-    try {
-      const data = { ...newComp, admin_id: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65", handicap_allowance: parseFloat(newComp.handicap_allowance) };
-      const courseId = data.course_id;
-      const courseIds = data.course_ids || [];
-      delete data.course_id;
-      delete data.course_ids;
-      const res = await sb.post("competitions", [data]);
-      const comp = res[0];
-      // Scramble — one course, day 1
-      if (courseId) {
-        await sb.post("competition_courses", [{ competition_id: comp.id, course_id: courseId, day: 1 }]);
-      }
-      // Hole Points Race — multiple courses, one per day
-      if (courseIds.length > 0) {
-        await sb.post("competition_courses", courseIds.map((cid, i) => ({ competition_id: comp.id, course_id: cid, day: i + 1 })));
-      }
-      setCompetitions(prev => [comp, ...prev]);
-      setActiveComp(comp);
-      setShowNewComp(false);
-      setNewComp({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "", course_ids: [] });
+  const createComp=async()=>{
+    if(!newComp.name)return;
+    try{
+      const payload={name:newComp.name,location:newComp.location,format:newComp.format,start_date:newComp.start_date||null,end_date:newComp.end_date||null,notes:newComp.notes,admin_id:ADMIN_ID,status:"draft",handicap_allowance:newComp.format==="hole_points_race"?0.75:null};
+      const res=await sb.post("competitions",[payload]);const comp=res[0];
+      if(newComp.format==="scramble"&&newComp.course_id)await sb.post("competition_courses",[{competition_id:comp.id,course_id:newComp.course_id,day:1}]);
+      if(newComp.format==="hole_points_race"){const links=newComp.course_ids.map((cid,i)=>cid?{competition_id:comp.id,course_id:cid,day:i+1}:null).filter(Boolean);if(links.length>0)await sb.post("competition_courses",links);}
+      setCompetitions(prev=>[comp,...prev]);setSelectedComp(comp);setCompTab("teams");setNav("competitions");
+      setShowNewComp(false);setNewComp({name:"",location:"",format:"scramble",start_date:"",end_date:"",notes:"",course_id:"",course_ids:["","","",""]});
       showToast("Competition created!");
-    } catch(e) { showToast(e.message, "error"); }
+    }catch(e){showToast(e.message,"error");}
   };
 
-  const deleteComp = async (comp) => {
-    if (!confirm(`⚠️ Delete "${comp.name}"?\n\nThis will permanently delete the competition and ALL associated teams, players, scores and auction data. This cannot be undone.`)) return;
-    try {
-      await sb.del("competitions", comp.id);
-      setCompetitions(prev => prev.filter(c => c.id !== comp.id));
-      if (activeComp?.id === comp.id) setActiveComp(competitions.find(c => c.id !== comp.id) || null);
-      showToast(`${comp.name} deleted`);
-    } catch(e) { showToast(e.message, "error"); }
+  const deleteComp=async(comp)=>{
+    if(!confirm(`⚠️ Delete "${comp.name}"?\n\nThis permanently deletes ALL teams, players, scores, auction data and sponsors. This CANNOT be undone.`))return;
+    try{await sb.del("competitions",comp.id);setCompetitions(prev=>prev.filter(c=>c.id!==comp.id));if(selectedComp?.id===comp.id)setSelectedComp(null);showToast(`"${comp.name}" deleted`);}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const updateCourse = async () => {
-    if (!editCourse) return;
-    try {
-      await sb.patch("courses", editCourse.id, { name: editCourse.name, location: editCourse.location, par: parseInt(editCourse.par), rating: parseFloat(editCourse.rating), slope: parseInt(editCourse.slope) });
-      setCourses(prev => prev.map(c => c.id === editCourse.id ? { ...c, ...editCourse } : c));
-      setEditCourse(null);
-      showToast("Course updated!");
-    } catch(e) { showToast(e.message, "error"); }
+  const updateCompStatus=async(comp,status)=>{
+    try{await sb.patch("competitions",comp.id,{status});setCompetitions(prev=>prev.map(c=>c.id===comp.id?{...c,status}:c));if(selectedComp?.id===comp.id)setSelectedComp(prev=>({...prev,status}));showToast(`Status: ${status}`);}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const createCourse = async () => {
-    if (!newCourse.name) return;
-    try {
-      // Build 18 holes with default par 4 and SI 1-18
-      const holes = Array.from({length:18}, (_,i) => ({ h: i+1, par: 4, si: i+1 }));
-      const res = await sb.post("courses", [{ ...newCourse, par: parseInt(newCourse.par), rating: parseFloat(newCourse.rating), slope: parseInt(newCourse.slope), holes, added_by: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65" }]);
-      setCourses(prev => [...prev, res[0]]);
-      setShowNewCourse(false);
-      setNewCourse({ name: "", location: "", par: "72", rating: "70.0", slope: "125" });
-      showToast("Course added! Edit hole par/SI values in Supabase if needed.");
-    } catch(e) { showToast(e.message, "error"); }
+  const createCourse=async()=>{
+    if(!newCourse.name)return;
+    try{const holes=Array.from({length:18},(_,i)=>({h:i+1,par:4,si:i+1}));const res=await sb.post("courses",[{...newCourse,par:parseInt(newCourse.par),rating:parseFloat(newCourse.rating),slope:parseInt(newCourse.slope),holes,added_by:ADMIN_ID}]);setCourses(prev=>[...prev,res[0]].sort((a,b)=>a.name.localeCompare(b.name)));setShowNewCourse(false);setNewCourse({name:"",location:"",par:"70",rating:"69.0",slope:"120"});showToast("Course added!");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const updateCompStatus = async (status) => {
-    try {
-      await sb.patch("competitions", activeComp.id, { status });
-      setActiveComp(prev => ({ ...prev, status }));
-      setCompetitions(prev => prev.map(c => c.id === activeComp.id ? { ...c, status } : c));
-      showToast(`Competition set to ${status}`);
-    } catch(e) { showToast(e.message, "error"); }
+  const updateCourse=async()=>{
+    if(!editCourse)return;
+    try{await sb.patch("courses",editCourse.id,{name:editCourse.name,location:editCourse.location,par:parseInt(editCourse.par),rating:parseFloat(editCourse.rating),slope:parseInt(editCourse.slope)});setCourses(prev=>prev.map(c=>c.id===editCourse.id?{...c,...editCourse}:c));setEditCourse(null);showToast("Course updated!");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const createTeam = async () => {
-    if (!newTeam.name || !activeComp) return;
-    try {
-      const maxP = activeComp.format === "scramble" ? 4 : 2;
-      const res = await sb.post("teams", [{ ...newTeam, competition_id: activeComp.id, max_players: maxP }]);
-      setTeams(prev => [...prev, res[0]]);
-      setShowNewTeam(false);
-      setNewTeam({ name: "", pin: "" });
-      showToast("Team created!");
-    } catch(e) { showToast(e.message, "error"); }
+  const createTeam=async()=>{
+    if(!newTeam.name||!selectedComp)return;
+    try{const maxP=selectedComp.format==="scramble"?4:2;const res=await sb.post("teams",[{...newTeam,competition_id:selectedComp.id,max_players:maxP}]);setTeams(prev=>[...prev,res[0]]);setShowNewTeam(false);setNewTeam({name:"",pin:""});showToast("Team added!");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const createPlayer = async (teamId) => {
-    if (!newPlayer.name) return;
-    try {
-      const res = await sb.post("players", [{ ...newPlayer, competition_id: activeComp.id, team_id: teamId, admin_id: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65", handicap: parseFloat(newPlayer.handicap) || null, slot: parseInt(newPlayer.slot) }]);
-      setPlayers(prev => [...prev, res[0]]);
-      setShowNewPlayer(null);
-      setNewPlayer({ name: "", handicap: "", company: "", email: "", slot: "0" });
-      showToast("Player added!");
-    } catch(e) { showToast(e.message, "error"); }
+  const deleteTeam=async(id)=>{
+    if(!confirm("Delete this team and all its players?"))return;
+    try{await sb.del("teams",id);setTeams(prev=>prev.filter(t=>t.id!==id));setPlayers(prev=>prev.filter(p=>p.team_id!==id));showToast("Team deleted");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const deleteTeam = async (id) => {
-    if (!confirm("Delete this team and all its players?")) return;
-    try {
-      await sb.del("teams", id);
-      setTeams(prev => prev.filter(t => t.id !== id));
-      setPlayers(prev => prev.filter(p => p.team_id !== id));
-      showToast("Team deleted");
-    } catch(e) { showToast(e.message, "error"); }
+  const createPlayer=async(teamId)=>{
+    if(!newPlayer.name)return;
+    try{const slot=players.filter(p=>p.team_id===teamId).length;const res=await sb.post("players",[{...newPlayer,competition_id:selectedComp.id,team_id:teamId,admin_id:ADMIN_ID,handicap:parseFloat(newPlayer.handicap)||null,slot}]);setPlayers(prev=>[...prev,res[0]]);setShowNewPlayer(null);setNewPlayer({name:"",handicap:"",company:"",email:""});showToast("Player added!");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const deletePlayer = async (id) => {
-    try {
-      await sb.del("players", id);
-      setPlayers(prev => prev.filter(p => p.id !== id));
-      showToast("Player removed");
-    } catch(e) { showToast(e.message, "error"); }
+  const deletePlayer=async(id)=>{try{await sb.del("players",id);setPlayers(prev=>prev.filter(p=>p.id!==id));showToast("Player removed");}catch(e){showToast(e.message,"error");}};
+
+  const createAuctionItem=async()=>{
+    if(!newItem.title||!selectedComp)return;
+    try{const res=await sb.post("auction_items",[{...newItem,competition_id:selectedComp.id,start_bid:parseInt(newItem.start_bid)||0,sort_order:auctionItems.length}]);setAuctionItems(prev=>[...prev,res[0]]);setShowNewItem(false);setNewItem({title:"",description:"",emoji:"🏆",start_bid:"",closes_at:"17:30"});showToast("Item added!");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const createAuctionItem = async () => {
-    if (!newItem.title || !activeComp) return;
-    try {
-      const res = await sb.post("auction_items", [{ ...newItem, competition_id: activeComp.id, start_bid: parseInt(newItem.start_bid) || 0, sort_order: parseInt(newItem.sort_order) || 0 }]);
-      setAuctionItems(prev => [...prev, res[0]]);
-      setShowNewItem(false);
-      setNewItem({ title: "", description: "", emoji: "🏆", start_bid: "", closes_at: "17:30", sort_order: "0" });
-      showToast("Auction item added!");
-    } catch(e) { showToast(e.message, "error"); }
+  const toggleAuctionClose=async(item)=>{
+    try{await sb.patch("auction_items",item.id,{is_closed:!item.is_closed});setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,is_closed:!i.is_closed}:i));showToast(item.is_closed?"Reopened":"Closed");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const toggleAuctionClose = async (item) => {
-    try {
-      await sb.patch("auction_items", item.id, { is_closed: !item.is_closed });
-      setAuctionItems(prev => prev.map(i => i.id === item.id ? { ...i, is_closed: !i.is_closed } : i));
-      showToast(item.is_closed ? "Item reopened" : "Item closed");
-    } catch(e) { showToast(e.message, "error"); }
+  const createSponsor=async()=>{
+    if(!selectedComp)return;
+    try{const res=await sb.post("sponsored_holes",[{...newSponsor,competition_id:selectedComp.id,hole_index:parseInt(newSponsor.hole_index)}]);setSponsoredHoles(prev=>[...prev,res[0]]);setShowNewSponsor(false);setNewSponsor({hole_index:"2",type:"nearest_pin",sponsor_name:"",sponsor_color:"#2563eb",prize_desc:""});showToast("Sponsor added!");}
+    catch(e){showToast(e.message,"error");}
   };
 
-  const createSponsoredHole = async () => {
-    if (!activeComp) return;
-    try {
-      const res = await sb.post("sponsored_holes", [{ ...newSponsor, competition_id: activeComp.id, hole_index: parseInt(newSponsor.hole_index) }]);
-      setSponsoredHoles(prev => [...prev, res[0]]);
-      setShowSponsor(false);
-      setNewSponsor({ hole_index: "0", type: "nearest_pin", sponsor_name: "", sponsor_color: "#2563eb", prize_desc: "" });
-      showToast("Sponsored hole added!");
-    } catch(e) { showToast(e.message, "error"); }
-  };
+  const deleteSponsor=async(id)=>{try{await sb.del("sponsored_holes",id);setSponsoredHoles(prev=>prev.filter(s=>s.id!==id));showToast("Removed");}catch(e){showToast(e.message,"error");}};
 
-  // ── Derived stats ───────────────────────────────────────────
-  const totalTeams   = teams.length;
-  const totalPlayers = players.length;
-  const holesScored  = new Set(scores.filter(s => s.gross_score != null).map(s => `${s.team_id}_${s.hole_index}`)).size;
-  const totalBids    = auctionBids.length;
-  const topBidValue  = auctionBids.length ? Math.max(...auctionBids.map(b => b.amount)) : 0;
-
-  // ── Nav items ───────────────────────────────────────────────
-  const nav = [
-    { id: "dashboard", icon: "⬛", label: "Dashboard" },
-    { id: "competitions", icon: "🏆", label: "Competitions" },
-    { id: "teams", icon: "👥", label: "Teams & Players" },
-    { id: "courses", icon: "⛳", label: "Courses" },
-    { id: "sponsors", icon: "🎯", label: "Sponsors" },
-    { id: "auction", icon: "🎗️", label: "Auction" },
-    { id: "scores", icon: "📊", label: "Live Scores" },
-  ];
-
-  // ── RENDER ─────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", background: T.navy, fontFamily: "'DM Sans', system-ui, sans-serif", color: T.text, overflow: "hidden" }}>
+    <div style={{display:"flex",height:"100vh",width:"100vw",background:T.navy,fontFamily:"'DM Sans',system-ui,sans-serif",color:T.text,overflow:"hidden"}}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@700;900&display=swap');
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; } 
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 3px; }
-        input, select, textarea { font-family: inherit; color: ${T.text}; }
-        input::placeholder { color: ${T.textDk}; }
-        table { border-collapse: collapse; width: 100%; }
-        th { text-align: left; font-size: 11px; font-weight: 700; color: ${T.textMd}; text-transform: uppercase; letter-spacing: 1px; padding: 10px 16px; border-bottom: 1px solid ${T.border}; }
-        td { padding: 12px 16px; border-bottom: 1px solid ${T.border}; font-size: 13px; color: ${T.text}; }
-        tr:last-child td { border-bottom: none; }
-        tr:hover td { background: ${T.navyMd}; }
-        button { font-family: inherit; }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;900&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        ::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px;}
+        input,select{font-family:inherit;color:${T.text};}input::placeholder{color:${T.textDk};}
+        table{border-collapse:collapse;width:100%;}
+        th{text-align:left;font-size:11px;font-weight:700;color:${T.textMd};text-transform:uppercase;letter-spacing:1px;padding:10px 16px;border-bottom:1px solid ${T.border};}
+        td{padding:12px 16px;border-bottom:1px solid ${T.border};font-size:13px;color:${T.text};vertical-align:middle;}
+        tr:last-child td{border-bottom:none;}tr:hover td{background:${T.navyMd}33;}
+        button{font-family:inherit;}
       `}</style>
 
-      {/* ── SIDEBAR ── */}
-      <div style={{ width: 220, background: T.navyMd, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        {/* Logo */}
-        <div style={{ padding: "24px 20px 20px", borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 900, letterSpacing: "-0.5px" }}>
-            <span style={{ color: T.text }}>wRight</span>
-            <span style={{ color: T.red }}>Score</span>
+      {/* SIDEBAR */}
+      <div style={{width:220,background:T.navyMd,borderRight:`1px solid ${T.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
+        <div style={{padding:"22px 20px 18px",borderBottom:`1px solid ${T.border}`}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900}}>
+            <span style={{color:T.text}}>wRight</span><span style={{color:T.red}}>Score</span>
           </div>
-          <div style={{ fontSize: 10, color: T.textDk, letterSpacing: 2, textTransform: "uppercase", marginTop: 3 }}>Admin Portal</div>
+          <div style={{fontSize:10,color:T.textDk,letterSpacing:2,textTransform:"uppercase",marginTop:3}}>Admin Portal</div>
         </div>
-
-        {/* Competition selector */}
-        <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ fontSize: 10, color: T.textDk, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Active Competition</div>
-          <select value={activeComp?.id || ""} onChange={e => setActiveComp(competitions.find(c => c.id === e.target.value))}
-            style={{ width: "100%", background: T.input, border: `1px solid ${T.border}`, borderRadius: 6, padding: "7px 10px", color: T.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
-            {competitions.length === 0 && <option value="">No competitions yet</option>}
-            {competitions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
-          {nav.map(n => (
-            <button key={n.id} onClick={() => setView(n.id)}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", border: "none", background: view === n.id ? `${T.blue}22` : "none", color: view === n.id ? T.text : T.textMd, fontSize: 13, fontWeight: view === n.id ? 700 : 400, cursor: "pointer", fontFamily: "inherit", textAlign: "left", borderLeft: `3px solid ${view === n.id ? T.blue : "transparent"}`, transition: "all 0.12s" }}>
-              <span style={{ fontSize: 15 }}>{n.icon}</span>
-              {n.label}
+        <nav style={{flex:1,padding:"10px 0",overflowY:"auto"}}>
+          {[{id:"dashboard",icon:"▣",label:"Dashboard"},{id:"courses",icon:"⛳",label:"Courses"},{id:"competitions",icon:"🏆",label:"Competitions"}].map(n=>(
+            <button key={n.id} onClick={()=>{setNav(n.id);setSelectedComp(null);}}
+              style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 20px",border:"none",background:nav===n.id&&!selectedComp?`${T.blue}22`:"none",color:nav===n.id&&!selectedComp?T.white:T.textMd,fontSize:13,fontWeight:nav===n.id&&!selectedComp?700:400,cursor:"pointer",fontFamily:"inherit",textAlign:"left",borderLeft:`3px solid ${nav===n.id&&!selectedComp?T.blue:"transparent"}`}}>
+              <span>{n.icon}</span>{n.label}
             </button>
           ))}
+          {competitions.length>0&&(nav==="competitions"||selectedComp)&&(
+            <div style={{borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:4}}>
+              {competitions.map(c=>(
+                <button key={c.id} onClick={()=>{setSelectedComp(c);setCompTab("teams");setNav("competitions");}}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"9px 20px 9px 28px",border:"none",background:selectedComp?.id===c.id?`${T.blue}33`:"none",color:selectedComp?.id===c.id?T.white:T.textMd,fontSize:12,fontWeight:selectedComp?.id===c.id?700:400,cursor:"pointer",fontFamily:"inherit",textAlign:"left",borderLeft:`3px solid ${selectedComp?.id===c.id?T.blue:"transparent"}`}}>
+                  <span style={{fontSize:8,color:c.status==="live"?T.green:c.status==="draft"?T.amber:T.textDk}}>●</span>
+                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
-
-        {/* Footer */}
-        <div style={{ padding: "12px 20px", borderTop: `1px solid ${T.border}`, fontSize: 10, color: T.textDk }}>
-          {activeComp && statusPill(activeComp.status)}
-          <div style={{ marginTop: 6 }}>v1.0 · Score wRight</div>
-        </div>
+        <div style={{padding:"12px 20px",borderTop:`1px solid ${T.border}`,fontSize:10,color:T.textDk}}>Score wRight Admin v1.0</div>
       </div>
 
-      {/* ── MAIN CONTENT ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
+      {/* MAIN */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {/* Top bar */}
-        <div style={{ height: 60, background: T.navyMd, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", flexShrink: 0 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>
-            {nav.find(n => n.id === view)?.icon} {nav.find(n => n.id === view)?.label}
-            {activeComp && <span style={{ fontSize: 13, fontWeight: 400, color: T.textMd, marginLeft: 12 }}>— {activeComp.name}</span>}
+        <div style={{height:58,background:T.navyMd,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 28px",flexShrink:0}}>
+          <div style={{fontSize:17,fontWeight:800}}>
+            {selectedComp?(
+              <span>
+                <span style={{color:T.textMd,fontWeight:400,cursor:"pointer"}} onClick={()=>setSelectedComp(null)}>Competitions</span>
+                <span style={{color:T.textMd}}> / </span>{selectedComp.name}
+                <span style={{marginLeft:10}}>{statusPill(selectedComp.status)}</span>
+              </span>
+            ):({dashboard:"Dashboard",courses:"Courses",competitions:"Competitions"}[nav])}
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {activeComp && <>
-              {activeComp.status === "draft" && <Btn onClick={() => updateCompStatus("live")} variant="success" small>▶ Go Live</Btn>}
-              {activeComp.status === "live" && <Btn onClick={() => updateCompStatus("finished")} small>⏹ Finish</Btn>}
-              {activeComp.status === "finished" && <Btn onClick={() => updateCompStatus("draft")} variant="secondary" small>↺ Reopen</Btn>}
-            </>}
-            <Btn onClick={() => setShowNewComp(true)} small>+ New Competition</Btn>
-            <Btn onClick={loadAll} variant="secondary" small>↺ Refresh</Btn>
+          <div style={{display:"flex",gap:8}}>
+            {selectedComp&&<>{selectedComp.status==="draft"&&<Btn onClick={()=>updateCompStatus(selectedComp,"live")} variant="success" small>▶ Go Live</Btn>}{selectedComp.status==="live"&&<Btn onClick={()=>updateCompStatus(selectedComp,"finished")} variant="danger" small>⏹ Finish</Btn>}{selectedComp.status==="finished"&&<Btn onClick={()=>updateCompStatus(selectedComp,"draft")} variant="secondary" small>↺ Reopen</Btn>}</>}
+            {nav==="courses"&&!selectedComp&&<Btn onClick={()=>setShowNewCourse(true)} small>+ Add Course</Btn>}
+            {nav==="competitions"&&!selectedComp&&<Btn onClick={()=>setShowNewComp(true)} small>+ New Competition</Btn>}
+            {selectedComp&&compTab==="teams"&&<Btn onClick={()=>setShowNewTeam(true)} small>+ Add Team</Btn>}
+            {selectedComp&&compTab==="auction"&&<Btn onClick={()=>setShowNewItem(true)} small>+ Add Item</Btn>}
+            {selectedComp&&compTab==="sponsors"&&<Btn onClick={()=>setShowNewSponsor(true)} small>+ Add Sponsor</Btn>}
+            <Btn onClick={loadBase} variant="secondary" small>↺</Btn>
           </div>
         </div>
 
-        {/* Content area */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 32 }}>
+        {/* Content */}
+        <div style={{flex:1,overflowY:"auto",padding:28}}>
 
-          {/* ── DASHBOARD ── */}
-          {view === "dashboard" && (
+          {/* DASHBOARD */}
+          {nav==="dashboard"&&!selectedComp&&(
             <div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginBottom: 28 }}>
-                <Stat label="Teams" value={totalTeams} sub={`${activeComp?.format || "–"} format`} color={T.blue} />
-                <Stat label="Players" value={totalPlayers} sub="registered" color={T.blue} />
-                <Stat label="Holes Scored" value={holesScored} sub="team / hole combos" color={T.green} />
-                <Stat label="Auction Bids" value={totalBids} sub="total placed" color={T.amber} />
-                <Stat label="Top Bid" value={totalBids ? `€${topBidValue}` : "–"} sub="highest single bid" color={T.red} />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                {/* Recent competitions */}
-                <Card>
-                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>All Competitions</div>
-                    <Btn onClick={() => setShowNewComp(true)} small>+ New</Btn>
-                  </div>
-                  <table>
-                    <thead><tr><th>Name</th><th>Format</th><th>Date</th><th>Status</th></tr></thead>
-                    <tbody>
-                      {competitions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: T.textDk, padding: 30 }}>No competitions yet — create one to get started</td></tr>}
-                      {competitions.map(c => (
-                        <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => { setActiveComp(c); setView("teams"); }}>
-                          <td style={{ fontWeight: 600 }}>{c.name}</td>
-                          <td><span style={{ background: c.format === "scramble" ? T.amberLt : T.greenLt, color: c.format === "scramble" ? "#78350f" : "#14532d", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{c.format}</span></td>
-                          <td style={{ color: T.textMd }}>{c.start_date || "–"}</td>
-                          <td>{statusPill(c.status)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </Card>
-
-                {/* Quick stats for active comp */}
-                <Card>
-                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>Active Competition — {activeComp?.name || "None selected"}</div>
-                  </div>
-                  {activeComp ? (
-                    <div style={{ padding: 20 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-                        {[
-                          { label: "Format", value: activeComp.format },
-                          { label: "Status", value: activeComp.status.toUpperCase() },
-                          { label: "Teams", value: totalTeams },
-                          { label: "Players", value: totalPlayers },
-                          { label: "Auction Items", value: auctionItems.length },
-                          { label: "Sponsored Holes", value: sponsoredHoles.length },
-                        ].map(s => (
-                          <div key={s.label} style={{ background: T.navyMd, borderRadius: 8, padding: "10px 14px" }}>
-                            <div style={{ fontSize: 10, color: T.textDk, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</div>
-                            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{s.value}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {activeComp.notes && <div style={{ background: T.navyMd, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: T.textMd }}>{activeComp.notes}</div>}
-                    </div>
-                  ) : (
-                    <div style={{ padding: 40, textAlign: "center", color: T.textDk }}>Select a competition from the sidebar</div>
-                  )}
-                </Card>
-              </div>
-            </div>
-          )}
-
-          {/* ── COMPETITIONS ── */}
-          {view === "competitions" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div style={{ fontSize: 13, color: T.textMd }}>{competitions.length} competition{competitions.length !== 1 ? "s" : ""} total</div>
-                <Btn onClick={() => setShowNewComp(true)}>+ New Competition</Btn>
-              </div>
-              {competitions.length === 0 ? (
-                <Card style={{ padding: 60, textAlign: "center" }}>
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>🏆</div>
-                  <div style={{ fontSize: 16, color: T.textMd, marginBottom: 16 }}>No competitions yet</div>
-                  <Btn onClick={() => setShowNewComp(true)}>+ Create First Competition</Btn>
-                </Card>
-              ) : (
-                <Card>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Format</th>
-                        <th>Location</th>
-                        <th>Date</th>
-                        <th>Teams</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {competitions.map(c => {
-                        const compTeams = teams.filter(t => t.competition_id === c.id);
-                        const isActive = activeComp?.id === c.id;
-                        return (
-                          <tr key={c.id} style={{ background: isActive ? `${T.blue}11` : "transparent" }}>
-                            <td style={{ fontWeight: 700, fontSize: 14 }}>
-                              {isActive && <span style={{ color: T.blue, marginRight: 6 }}>●</span>}
-                              {c.name}
-                            </td>
-                            <td>
-                              <span style={{ background: c.format === "scramble" ? T.amberLt : T.greenLt, color: c.format === "scramble" ? "#78350f" : "#14532d", padding: "2px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
-                                {c.format === "scramble" ? "Scramble" : "Hole Points Race"}
-                              </span>
-                            </td>
-                            <td style={{ color: T.textMd }}>{c.location || "–"}</td>
-                            <td style={{ color: T.textMd }}>{c.start_date || "–"}</td>
-                            <td style={{ fontWeight: 700 }}>{compTeams.length}</td>
-                            <td>{statusPill(c.status)}</td>
-                            <td>
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <Btn onClick={() => { setActiveComp(c); setView("teams"); }} small>
-                                  {isActive ? "✓ Active" : "Select"}
-                                </Btn>
-                                {c.status === "draft" && (
-                                  <Btn onClick={async () => {
-                                    await sb.patch("competitions", c.id, { status: "live" });
-                                    setCompetitions(prev => prev.map(x => x.id === c.id ? {...x, status: "live"} : x));
-                                    if (isActive) setActiveComp(prev => ({...prev, status: "live"}));
-                                    showToast(`${c.name} is now live!`);
-                                  }} variant="success" small>▶ Go Live</Btn>
-                                )}
-                                {c.status === "live" && (
-                                  <Btn onClick={async () => {
-                                    await sb.patch("competitions", c.id, { status: "finished" });
-                                    setCompetitions(prev => prev.map(x => x.id === c.id ? {...x, status: "finished"} : x));
-                                    if (isActive) setActiveComp(prev => ({...prev, status: "finished"}));
-                                    showToast(`${c.name} finished`);
-                                  }} variant="danger" small>⏹ Finish</Btn>
-                                )}
-                                <Btn onClick={() => deleteComp(c)} variant="danger" small>🗑 Delete</Btn>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </Card>
-              )}
-            </div>
-          )}
-          {view === "teams" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div style={{ fontSize: 13, color: T.textMd }}>{totalTeams} teams · {totalPlayers} players · {activeComp?.format === "scramble" ? "4 players per team · PIN login" : "2 players per team"}</div>
-                <Btn onClick={() => setShowNewTeam(true)}>+ Add Team</Btn>
-              </div>
-              {teams.length === 0 && (
-                <Card style={{ padding: 60, textAlign: "center" }}>
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>👥</div>
-                  <div style={{ fontSize: 16, color: T.textMd, marginBottom: 16 }}>No teams yet</div>
-                  <Btn onClick={() => setShowNewTeam(true)}>+ Add First Team</Btn>
-                </Card>
-              )}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-                {teams.map(team => {
-                  const teamPlayers = players.filter(p => p.team_id === team.id);
-                  const allowance = Math.round(teamPlayers.reduce((s, p) => s + (parseFloat(p.handicap) || 0), 0) / 10);
-                  return (
-                    <Card key={team.id}>
-                      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: 15 }}>⚑ {team.name}</div>
-                          <div style={{ fontSize: 11, color: T.textMd, marginTop: 2 }}>
-                            PIN: <span style={{ fontFamily: "monospace", fontWeight: 700, color: T.amber }}>{team.pin || "—"}</span>
-                            {activeComp?.format === "scramble" && allowance > 0 && <span style={{ marginLeft: 10 }}>Allow: -{allowance}</span>}
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Btn onClick={() => setShowNewPlayer(team)} small>+ Player</Btn>
-                          <Btn onClick={() => deleteTeam(team.id)} variant="danger" small>✕</Btn>
-                        </div>
-                      </div>
-                      <div>
-                        {teamPlayers.length === 0 && (
-                          <div style={{ padding: "16px 18px", color: T.textDk, fontSize: 13 }}>No players yet</div>
-                        )}
-                        {teamPlayers.map((p, i) => (
-                          <div key={p.id} style={{ padding: "10px 18px", borderBottom: i < teamPlayers.length - 1 ? `1px solid ${T.border}` : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
-                              <div style={{ fontSize: 11, color: T.textMd }}>HCP {p.handicap ?? "–"} {p.company && `· ${p.company}`}</div>
-                            </div>
-                            <button onClick={() => deletePlayer(p.id)} style={{ background: "none", border: "none", color: T.textDk, cursor: "pointer", fontSize: 14, padding: "2px 6px" }}>✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── COURSES ── */}
-          {view === "courses" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-                <Btn onClick={() => setShowNewCourse(true)}>+ Add Course</Btn>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
+                <Stat label="Competitions" value={competitions.length} color={T.blue}/>
+                <Stat label="Courses" value={courses.length} sub="in library" color={T.blue}/>
+                <Stat label="Live Now" value={competitions.filter(c=>c.status==="live").length} color={T.green}/>
+                <Stat label="Finished" value={competitions.filter(c=>c.status==="finished").length} color={T.textDk}/>
               </div>
               <Card>
+                <div style={{padding:"14px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{fontWeight:700}}>All Competitions</div>
+                  <Btn onClick={()=>setShowNewComp(true)} small>+ New</Btn>
+                </div>
                 <table>
-                  <thead><tr><th>Course</th><th>Location</th><th>Par</th><th>Rating</th><th>Slope</th><th>Holes</th><th>Action</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Format</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
                   <tbody>
-                    {courses.map(c => (
-                      <tr key={c.id}>
-                        <td style={{ fontWeight: 600 }}>{c.name}</td>
-                        <td style={{ color: T.textMd }}>{c.location || "–"}</td>
-                        <td>{c.par}</td>
-                        <td>{c.rating}</td>
-                        <td>{c.slope}</td>
-                        <td>{Array.isArray(c.holes) ? c.holes.length : "–"}</td>
-                        <td><Btn onClick={() => setEditCourse({...c, par: String(c.par), rating: String(c.rating), slope: String(c.slope)})} small>✏️ Edit</Btn></td>
+                    {competitions.length===0&&<tr><td colSpan={5} style={{textAlign:"center",color:T.textDk,padding:40}}>No competitions yet</td></tr>}
+                    {competitions.map(c=>(
+                      <tr key={c.id} style={{cursor:"pointer"}} onClick={()=>{setSelectedComp(c);setCompTab("teams");setNav("competitions");}}>
+                        <td style={{fontWeight:600}}>{c.name}</td>
+                        <td><span style={{background:c.format==="scramble"?T.amberLt:T.greenLt,color:c.format==="scramble"?"#78350f":"#14532d",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>{c.format==="scramble"?"Scramble":"Hole Points Race"}</span></td>
+                        <td style={{color:T.textMd}}>{c.start_date||"–"}</td>
+                        <td>{statusPill(c.status)}</td>
+                        <td onClick={e=>e.stopPropagation()}><Btn onClick={()=>{setSelectedComp(c);setCompTab("teams");setNav("competitions");}} small>Open →</Btn></td>
                       </tr>
                     ))}
                   </tbody>
@@ -655,301 +255,367 @@ export default function AdminPortal() {
             </div>
           )}
 
-          {/* ── SPONSORS ── */}
-          {view === "sponsors" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-                <Btn onClick={() => setShowSponsor(true)}>+ Add Sponsored Hole</Btn>
-              </div>
-              {sponsoredHoles.length === 0 ? (
-                <Card style={{ padding: 60, textAlign: "center" }}>
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
-                  <div style={{ fontSize: 16, color: T.textMd, marginBottom: 16 }}>No sponsored holes yet</div>
-                  <Btn onClick={() => setShowSponsor(true)}>+ Add First Sponsor</Btn>
-                </Card>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-                  {sponsoredHoles.map(sh => (
-                    <Card key={sh.id}>
-                      <div style={{ background: sh.sponsor_color, padding: "14px 18px", borderRadius: "12px 12px 0 0" }}>
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: 1 }}>Hole {sh.hole_index + 1}</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: T.white }}>{sh.type === "nearest_pin" ? "🎯 Nearest the Pin" : sh.type === "longest_drive" ? "🏌️ Longest Drive" : sh.type}</div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Sponsored by {sh.sponsor_name || "TBC"}</div>
-                      </div>
-                      <div style={{ padding: "12px 18px", fontSize: 13, color: T.textMd }}>{sh.prize_desc || "Prize TBC"}</div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── AUCTION ── */}
-          {view === "auction" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div style={{ fontSize: 13, color: T.textMd }}>{auctionItems.length} items · {totalBids} bids · Top bid: {totalBids ? `€${topBidValue}` : "–"}</div>
-                <Btn onClick={() => setShowNewItem(true)}>+ Add Item</Btn>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {auctionItems.length === 0 && (
-                    <Card style={{ padding: 60, textAlign: "center" }}>
-                      <div style={{ fontSize: 40, marginBottom: 12 }}>❤️</div>
-                      <div style={{ fontSize: 16, color: T.textMd, marginBottom: 16 }}>No auction items yet</div>
-                      <Btn onClick={() => setShowNewItem(true)}>+ Add First Item</Btn>
-                    </Card>
-                  )}
-                  {auctionItems.map(item => {
-                    const itemBids = auctionBids.filter(b => b.item_id === item.id).sort((a, b) => b.amount - a.amount);
-                    const top = itemBids[0];
-                    return (
-                      <Card key={item.id}>
-                        <div style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
-                          <div style={{ fontSize: 32, flexShrink: 0 }}>{item.emoji}</div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ fontWeight: 700, fontSize: 15 }}>{item.title}</div>
-                              {item.is_closed && <span style={{ background: T.textDk + "33", color: T.textDk, fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 10 }}>CLOSED</span>}
-                            </div>
-                            <div style={{ fontSize: 12, color: T.textMd, marginTop: 2 }}>{item.description}</div>
-                            <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>⏰ Closes {item.closes_at} · Starting bid: €{item.start_bid}</div>
-                          </div>
-                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                            <div style={{ fontSize: 11, color: T.textDk }}>Current bid</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: top ? T.green : T.textDk }}>€{top ? top.amount : item.start_bid}</div>
-                            <div style={{ fontSize: 11, color: T.textMd }}>{itemBids.length} bid{itemBids.length !== 1 ? "s" : ""}</div>
-                            {top && <div style={{ fontSize: 11, color: T.amber, marginTop: 2 }}>🏆 {top.team_name}</div>}
-                          </div>
-                          <Btn onClick={() => toggleAuctionClose(item)} variant={item.is_closed ? "success" : "danger"} small>{item.is_closed ? "Reopen" : "Close"}</Btn>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-
-                {/* Bid feed */}
-                <Card>
-                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, fontWeight: 700 }}>Live Bid Feed</div>
-                  <div style={{ maxHeight: 500, overflowY: "auto" }}>
-                    {auctionBids.length === 0 && <div style={{ padding: 30, textAlign: "center", color: T.textDk, fontSize: 13 }}>No bids yet</div>}
-                    {auctionBids.map(bid => {
-                      const item = auctionItems.find(i => i.id === bid.item_id);
-                      return (
-                        <div key={bid.id} style={{ padding: "12px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>{bid.team_name}</div>
-                            <div style={{ fontSize: 11, color: T.textMd }}>{item?.emoji} {item?.title}</div>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontWeight: 900, fontSize: 16, color: T.green }}>€{bid.amount}</div>
-                            <div style={{ fontSize: 10, color: T.textDk }}>{new Date(bid.placed_at).toLocaleTimeString()}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Card>
-              </div>
-            </div>
-          )}
-
-          {/* ── LIVE SCORES ── */}
-          {view === "scores" && (
-            <div>
-              <div style={{ marginBottom: 20, fontSize: 13, color: T.textMd }}>{scores.filter(s => s.gross_score != null).length} scores recorded across {teams.length} teams</div>
+          {/* COURSES */}
+          {nav==="courses"&&!selectedComp&&(
+            courses.length===0?(
+              <Card style={{padding:60,textAlign:"center"}}>
+                <div style={{fontSize:40,marginBottom:12}}>⛳</div>
+                <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No courses in library yet</div>
+                <Btn onClick={()=>setShowNewCourse(true)}>+ Add First Course</Btn>
+              </Card>
+            ):(
               <Card>
                 <table>
-                  <thead><tr><th>Team</th><th>Holes</th><th>Gross Total</th><th>Allowance</th><th>Net</th><th>vs Par</th></tr></thead>
+                  <thead><tr><th>Course</th><th>Location</th><th>Par</th><th>Rating</th><th>Slope</th><th>Holes</th><th>Action</th></tr></thead>
                   <tbody>
-                    {teams.map(team => {
-                      const teamScores = scores.filter(s => s.team_id === team.id && s.gross_score != null);
-                      const teamPlayers = players.filter(p => p.team_id === team.id);
-                      const allowance = Math.round(teamPlayers.reduce((s, p) => s + (parseFloat(p.handicap) || 0), 0) / 10);
-                      const gross = teamScores.reduce((s, sc) => s + sc.gross_score, 0);
-                      const holes = new Set(teamScores.map(s => s.hole_index)).size;
-                      const net = gross - allowance;
-                      const parPlayed = 70; // simplification — would use actual course data
-                      const vsPar = holes > 0 ? net - parPlayed : null;
-                      return (
-                        <tr key={team.id}>
-                          <td style={{ fontWeight: 600 }}>⚑ {team.name}</td>
-                          <td>{holes}/18</td>
-                          <td style={{ fontWeight: 700 }}>{holes > 0 ? gross : "–"}</td>
-                          <td style={{ color: T.amber }}>-{allowance}</td>
-                          <td style={{ fontWeight: 700 }}>{holes > 0 ? net : "–"}</td>
-                          <td style={{ fontWeight: 700, color: vsPar == null ? T.textDk : vsPar < 0 ? T.green : vsPar === 0 ? T.blue : T.red }}>
-                            {vsPar == null ? "–" : vsPar === 0 ? "E" : vsPar > 0 ? `+${vsPar}` : vsPar}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {courses.map(c=>(
+                      <tr key={c.id}>
+                        <td style={{fontWeight:600}}>{c.name}</td>
+                        <td style={{color:T.textMd}}>{c.location||"–"}</td>
+                        <td>{c.par}</td><td>{c.rating}</td><td>{c.slope}</td>
+                        <td>{Array.isArray(c.holes)?c.holes.length:"–"}</td>
+                        <td><Btn onClick={()=>setEditCourse({...c,par:String(c.par),rating:String(c.rating),slope:String(c.slope)})} small>✏️ Edit</Btn></td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </Card>
-            </div>
+            )
           )}
 
+          {/* COMPETITIONS LIST */}
+          {nav==="competitions"&&!selectedComp&&(
+            competitions.length===0?(
+              <Card style={{padding:60,textAlign:"center"}}>
+                <div style={{fontSize:40,marginBottom:12}}>🏆</div>
+                <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No competitions yet</div>
+                <Btn onClick={()=>setShowNewComp(true)}>+ Create First Competition</Btn>
+              </Card>
+            ):(
+              <Card>
+                <table>
+                  <thead><tr><th>Name</th><th>Format</th><th>Location</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {competitions.map(c=>(
+                      <tr key={c.id}>
+                        <td style={{fontWeight:700}}>{c.name}</td>
+                        <td><span style={{background:c.format==="scramble"?T.amberLt:T.greenLt,color:c.format==="scramble"?"#78350f":"#14532d",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>{c.format==="scramble"?"Scramble":"Hole Points Race"}</span></td>
+                        <td style={{color:T.textMd}}>{c.location||"–"}</td>
+                        <td style={{color:T.textMd}}>{c.start_date||"–"}</td>
+                        <td>{statusPill(c.status)}</td>
+                        <td><div style={{display:"flex",gap:6}}>
+                          <Btn onClick={()=>{setSelectedComp(c);setCompTab("teams");}} small>Open →</Btn>
+                          {c.status==="draft"&&<Btn onClick={()=>updateCompStatus(c,"live")} variant="success" small>▶ Live</Btn>}
+                          {c.status==="live"&&<Btn onClick={()=>updateCompStatus(c,"finished")} variant="danger" small>⏹ Finish</Btn>}
+                          <Btn onClick={()=>deleteComp(c)} variant="danger" small>🗑</Btn>
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )
+          )}
+
+          {/* COMPETITION DETAIL */}
+          {selectedComp&&(
+            <div>
+              <div style={{background:T.navyMd,borderRadius:12,padding:"14px 20px",marginBottom:20,display:"flex",gap:24,alignItems:"center",border:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Format</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.format==="scramble"?"Scramble":"Hole Points Race"}</div></div>
+                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Date</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.start_date||"–"}</div></div>
+                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Location</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.location||"–"}</div></div>
+                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Teams</div><div style={{fontWeight:700,marginTop:2}}>{teams.length}</div></div>
+                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Players</div><div style={{fontWeight:700,marginTop:2}}>{players.length}</div></div>
+                {selectedComp.notes&&<div style={{flex:1,fontSize:12,color:T.textMd,fontStyle:"italic"}}>{selectedComp.notes}</div>}
+              </div>
+              <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:20}}>
+                <Tab label="Teams & Players" active={compTab==="teams"} onClick={()=>setCompTab("teams")} badge={teams.length||null}/>
+                <Tab label="Sponsors" active={compTab==="sponsors"} onClick={()=>setCompTab("sponsors")} badge={sponsoredHoles.length||null}/>
+                <Tab label="Auction" active={compTab==="auction"} onClick={()=>setCompTab("auction")} badge={auctionItems.length||null}/>
+                <Tab label="Live Scores" active={compTab==="scores"} onClick={()=>setCompTab("scores")}/>
+              </div>
+
+              {/* TEAMS TAB */}
+              {compTab==="teams"&&(
+                teams.length===0?(
+                  <Card style={{padding:60,textAlign:"center"}}>
+                    <div style={{fontSize:40,marginBottom:12}}>👥</div>
+                    <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No teams yet</div>
+                    <Btn onClick={()=>setShowNewTeam(true)}>+ Add First Team</Btn>
+                  </Card>
+                ):(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+                    {teams.map(team=>{
+                      const tp=players.filter(p=>p.team_id===team.id);
+                      const allowance=selectedComp.format==="scramble"?Math.round(tp.reduce((s,p)=>s+(parseFloat(p.handicap)||0),0)/10):null;
+                      return(
+                        <Card key={team.id}>
+                          <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div>
+                              <div style={{fontWeight:800,fontSize:14}}>⚑ {team.name}</div>
+                              <div style={{fontSize:11,color:T.textMd,marginTop:3}}>
+                                PIN: <span style={{fontFamily:"monospace",fontWeight:700,color:T.amber,letterSpacing:2}}>{team.pin||"—"}</span>
+                                {allowance!=null&&allowance>0&&<span style={{marginLeft:8,color:T.textDk}}>· Allow -{allowance}</span>}
+                              </div>
+                            </div>
+                            <div style={{display:"flex",gap:5}}>
+                              <Btn onClick={()=>setShowNewPlayer(team)} small>+ Player</Btn>
+                              <Btn onClick={()=>deleteTeam(team.id)} variant="danger" small>✕</Btn>
+                            </div>
+                          </div>
+                          {tp.length===0&&<div style={{padding:"14px 16px",color:T.textDk,fontSize:12}}>No players yet</div>}
+                          {tp.map((p,i)=>(
+                            <div key={p.id} style={{padding:"9px 16px",borderBottom:i<tp.length-1?`1px solid ${T.border}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                              <div>
+                                <div style={{fontWeight:600,fontSize:13}}>{p.name}</div>
+                                <div style={{fontSize:11,color:T.textMd}}>HCP {p.handicap??"–"}{p.company?` · ${p.company}`:""}</div>
+                              </div>
+                              <button onClick={()=>deletePlayer(p.id)} style={{background:"none",border:"none",color:T.textDk,cursor:"pointer",fontSize:14}}>✕</button>
+                            </div>
+                          ))}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              {/* SPONSORS TAB */}
+              {compTab==="sponsors"&&(
+                <div>
+                  {sponsoredHoles.length===0?(
+                    <Card style={{padding:60,textAlign:"center"}}>
+                      <div style={{fontSize:40,marginBottom:12}}>🎯</div>
+                      <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No sponsored holes yet</div>
+                      <Btn onClick={()=>setShowNewSponsor(true)}>+ Add First Sponsor</Btn>
+                    </Card>
+                  ):(
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+                      {sponsoredHoles.map(sh=>(
+                        <Card key={sh.id}>
+                          <div style={{background:sh.sponsor_color,padding:"13px 16px",borderRadius:"12px 12px 0 0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                            <div>
+                              <div style={{fontSize:10,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1}}>Hole {sh.hole_index+1}</div>
+                              <div style={{fontSize:16,fontWeight:800,color:T.white,marginTop:2}}>{sh.type==="nearest_pin"?"🎯 Nearest the Pin":sh.type==="longest_drive"?"🏌️ Longest Drive":sh.type}</div>
+                              <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:2}}>Sponsored by {sh.sponsor_name||"TBC"}</div>
+                            </div>
+                            <button onClick={()=>deleteSponsor(sh.id)} style={{background:"rgba(0,0,0,0.2)",border:"none",color:T.white,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:12}}>✕</button>
+                          </div>
+                          <div style={{padding:"11px 16px",fontSize:12,color:T.textMd}}>{sh.prize_desc||"Prize TBC"}</div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* AUCTION TAB */}
+              {compTab==="auction"&&(
+                <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:20}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    {auctionItems.length===0?(
+                      <Card style={{padding:60,textAlign:"center"}}>
+                        <div style={{fontSize:40,marginBottom:12}}>❤️</div>
+                        <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No auction items yet</div>
+                        <Btn onClick={()=>setShowNewItem(true)}>+ Add First Item</Btn>
+                      </Card>
+                    ):auctionItems.map(item=>{
+                      const itemBids=auctionBids.filter(b=>b.item_id===item.id).sort((a,b)=>b.amount-a.amount);
+                      const top=itemBids[0];
+                      return(
+                        <Card key={item.id}>
+                          <div style={{padding:"13px 16px",display:"flex",alignItems:"center",gap:12}}>
+                            <div style={{fontSize:28,flexShrink:0}}>{item.emoji}</div>
+                            <div style={{flex:1}}>
+                              <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>{item.title}{item.is_closed&&<span style={{fontSize:10,fontWeight:700,background:T.textDk+"33",color:T.textDk,padding:"1px 8px",borderRadius:10}}>CLOSED</span>}</div>
+                              <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{item.description}</div>
+                              <div style={{fontSize:11,color:T.red,marginTop:3}}>⏰ Closes {item.closes_at} · Start €{item.start_bid}</div>
+                            </div>
+                            <div style={{textAlign:"right",flexShrink:0}}>
+                              <div style={{fontSize:22,fontWeight:900,color:top?T.green:T.textDk}}>€{top?top.amount:item.start_bid}</div>
+                              <div style={{fontSize:11,color:T.textMd}}>{itemBids.length} bid{itemBids.length!==1?"s":""}</div>
+                              {top&&<div style={{fontSize:11,color:T.amber}}>🏆 {top.team_name}</div>}
+                            </div>
+                            <Btn onClick={()=>toggleAuctionClose(item)} variant={item.is_closed?"success":"danger"} small>{item.is_closed?"Reopen":"Close"}</Btn>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  <Card>
+                    <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontWeight:700}}>Live Bid Feed</div>
+                    <div style={{maxHeight:500,overflowY:"auto"}}>
+                      {auctionBids.length===0?<div style={{padding:30,textAlign:"center",color:T.textDk,fontSize:13}}>No bids yet</div>:auctionBids.map(bid=>{
+                        const item=auctionItems.find(i=>i.id===bid.item_id);
+                        return(<div key={bid.id} style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div><div style={{fontWeight:600,fontSize:13}}>{bid.team_name}</div><div style={{fontSize:11,color:T.textMd}}>{item?.emoji} {item?.title}</div></div>
+                          <div style={{textAlign:"right"}}><div style={{fontWeight:900,fontSize:16,color:T.green}}>€{bid.amount}</div><div style={{fontSize:10,color:T.textDk}}>{new Date(bid.placed_at).toLocaleTimeString()}</div></div>
+                        </div>);
+                      })}
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* SCORES TAB */}
+              {compTab==="scores"&&(
+                <Card>
+                  <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontWeight:700}}>Live Scores — {selectedComp.name}</div>
+                  <table>
+                    <thead><tr><th>Team</th><th>Holes</th><th>Gross</th><th>Allowance</th><th>Net</th><th>vs Par</th></tr></thead>
+                    <tbody>
+                      {teams.length===0&&<tr><td colSpan={6} style={{textAlign:"center",color:T.textDk,padding:30}}>No teams yet</td></tr>}
+                      {teams.map(team=>{
+                        const ts=scores.filter(s=>s.team_id===team.id&&s.gross_score!=null);
+                        const tp=players.filter(p=>p.team_id===team.id);
+                        const allowance=Math.round(tp.reduce((s,p)=>s+(parseFloat(p.handicap)||0),0)/10);
+                        const gross=ts.reduce((s,sc)=>s+sc.gross_score,0);
+                        const holes=new Set(ts.map(s=>s.hole_index)).size;
+                        const net=gross-allowance;
+                        const vsPar=holes>0?net-70:null;
+                        return(<tr key={team.id}>
+                          <td style={{fontWeight:600}}>⚑ {team.name}</td>
+                          <td>{holes}/18</td>
+                          <td style={{fontWeight:700}}>{holes>0?gross:"–"}</td>
+                          <td style={{color:T.amber}}>-{allowance}</td>
+                          <td style={{fontWeight:700}}>{holes>0?net:"–"}</td>
+                          <td style={{fontWeight:700,color:vsPar==null?T.textDk:vsPar<0?T.green:vsPar===0?T.blue:T.red}}>{vsPar==null?"–":vsPar===0?"E":vsPar>0?`+${vsPar}`:vsPar}</td>
+                        </tr>);
+                      })}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── TOAST ── */}
-      {toast && (
-        <div style={{ position: "fixed", bottom: 24, right: 24, background: toast.type === "error" ? T.red : T.green, color: T.white, padding: "12px 20px", borderRadius: 10, fontWeight: 600, fontSize: 13, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 2000 }}>
-          {toast.type === "error" ? "❌" : "✓"} {toast.msg}
-        </div>
-      )}
+      {/* TOAST */}
+      {toast&&<div style={{position:"fixed",bottom:24,right:24,background:toast.type==="error"?T.red:T.green,color:T.white,padding:"12px 20px",borderRadius:10,fontWeight:600,fontSize:13,boxShadow:"0 8px 24px rgba(0,0,0,0.3)",zIndex:2000}}>{toast.type==="error"?"❌":"✓"} {toast.msg}</div>}
 
-      {/* ── MODALS ── */}
-
-      {/* New Competition */}
-      {showNewComp && (
-        <Modal title="Create New Competition" onClose={() => setShowNewComp(false)}>
-          <Inp label="Competition Name" value={newComp.name} onChange={v => setNewComp(p => ({...p, name: v}))} placeholder="e.g. Castle Golf Club Charity Day 2026" required />
-          <Inp label="Location" value={newComp.location} onChange={v => setNewComp(p => ({...p, location: v}))} placeholder="e.g. Rathfarnham, Dublin" />
-          <Sel label="Format" value={newComp.format} onChange={v => setNewComp(p => ({...p, format: v}))}
-            options={[{ value: "scramble", label: "Scramble (1 score per hole, team of 4)" }, { value: "hole_points_race", label: "Hole Points Race (wRyder Cup style)" }]} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Inp label="Start Date" value={newComp.start_date} onChange={v => setNewComp(p => ({...p, start_date: v}))} type="date" />
-            <Inp label="End Date" value={newComp.end_date} onChange={v => setNewComp(p => ({...p, end_date: v}))} type="date" />
+      {/* MODALS */}
+      {showNewComp&&(
+        <Modal title="Create New Competition" onClose={()=>setShowNewComp(false)}>
+          <Inp label="Competition Name" value={newComp.name} onChange={v=>setNewComp(p=>({...p,name:v}))} placeholder="e.g. Children's Charity Golf Classic 2026" required/>
+          <Inp label="Location" value={newComp.location} onChange={v=>setNewComp(p=>({...p,location:v}))} placeholder="e.g. Rathfarnham, Dublin"/>
+          <Sel label="Format" value={newComp.format} onChange={v=>setNewComp(p=>({...p,format:v}))} options={[{value:"scramble",label:"Scramble — one score per hole, team of 4"},{value:"hole_points_race",label:"Hole Points Race — wRyder Cup style"}]}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <Inp label="Start Date" value={newComp.start_date} onChange={v=>setNewComp(p=>({...p,start_date:v}))} type="date"/>
+            <Inp label="End Date" value={newComp.end_date} onChange={v=>setNewComp(p=>({...p,end_date:v}))} type="date"/>
           </div>
-          {newComp.format === "hole_points_race" && (
-            <Inp label="Handicap Allowance" value={newComp.handicap_allowance} onChange={v => setNewComp(p => ({...p, handicap_allowance: v}))} placeholder="0.75" />
+          <Inp label="Notes" value={newComp.notes} onChange={v=>setNewComp(p=>({...p,notes:v}))} placeholder="Any notes..."/>
+          {newComp.format==="scramble"&&(
+            <Sel label="Course" value={newComp.course_id} onChange={v=>setNewComp(p=>({...p,course_id:v}))} options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par})`}))]}/>
           )}
-          <Inp label="Notes" value={newComp.notes} onChange={v => setNewComp(p => ({...p, notes: v}))} placeholder="Any additional info..." />
-          {/* Scramble — single course */}
-          {newComp.format === "scramble" && (
-            <Sel label="Course" value={newComp.course_id} onChange={v => setNewComp(p => ({...p, course_id: v}))}
-              options={[{ value: "", label: "— Select a course —" }, ...courses.map(c => ({ value: c.id, label: `${c.name} (Par ${c.par})` }))]} />
-          )}
-          {/* Hole Points Race — multiple courses, one per day */}
-          {newComp.format === "hole_points_race" && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textMd, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Courses (one per day — in order)</label>
-              {[0,1,2,3].map(day => (
-                <div key={day} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMd, width: 48, flexShrink: 0 }}>Day {day + 1}</div>
-                  <select value={newComp.course_ids[day] || ""} onChange={e => {
-                    const ids = [...(newComp.course_ids || [])];
-                    ids[day] = e.target.value;
-                    setNewComp(p => ({...p, course_ids: ids}));
-                  }} style={{ flex: 1, background: T.input, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 12px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+          {newComp.format==="hole_points_race"&&(
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Courses — one per day</label>
+              {[0,1,2,3].map(day=>(
+                <div key={day} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textMd,width:48,flexShrink:0}}>Day {day+1}</div>
+                  <select value={newComp.course_ids[day]||""} onChange={e=>{const ids=[...newComp.course_ids];ids[day]=e.target.value;setNewComp(p=>({...p,course_ids:ids}));}} style={{flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}>
                     <option value="">— Optional —</option>
-                    {courses.map(c => <option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
+                    {courses.map(c=><option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
                   </select>
                 </div>
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setShowNewComp(false)} variant="secondary">Cancel</Btn>
-            <Btn onClick={createComp}>Create Competition</Btn>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowNewComp(false)} variant="secondary">Cancel</Btn>
+            <Btn onClick={createComp} disabled={!newComp.name}>Create Competition</Btn>
           </div>
         </Modal>
       )}
 
-      {/* New Team */}
-      {showNewTeam && (
-        <Modal title="Add Team" onClose={() => setShowNewTeam(false)} width={400}>
-          <Inp label="Team Name" value={newTeam.name} onChange={v => setNewTeam(p => ({...p, name: v}))} placeholder="e.g. Team Birdie" required />
-          <Inp label="PIN (4 digits)" value={newTeam.pin} onChange={v => setNewTeam(p => ({...p, pin: v}))} placeholder="e.g. 1234" />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setShowNewTeam(false)} variant="secondary">Cancel</Btn>
-            <Btn onClick={createTeam}>Add Team</Btn>
+      {showNewCourse&&(
+        <Modal title="Add Course to Library" onClose={()=>setShowNewCourse(false)} width={480}>
+          <Inp label="Course Name" value={newCourse.name} onChange={v=>setNewCourse(p=>({...p,name:v}))} placeholder="e.g. Castle Golf Club" required/>
+          <Inp label="Location" value={newCourse.location} onChange={v=>setNewCourse(p=>({...p,location:v}))} placeholder="e.g. Rathfarnham, Dublin"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+            <Inp label="Par" value={newCourse.par} onChange={v=>setNewCourse(p=>({...p,par:v}))} type="number"/>
+            <Inp label="Rating" value={newCourse.rating} onChange={v=>setNewCourse(p=>({...p,rating:v}))}/>
+            <Inp label="Slope" value={newCourse.slope} onChange={v=>setNewCourse(p=>({...p,slope:v}))} type="number"/>
           </div>
-        </Modal>
-      )}
-
-      {/* New Player */}
-      {showNewPlayer && (
-        <Modal title={`Add Player to ${showNewPlayer.name}`} onClose={() => setShowNewPlayer(null)} width={440}>
-          <Inp label="Full Name" value={newPlayer.name} onChange={v => setNewPlayer(p => ({...p, name: v}))} placeholder="e.g. Ted Wright" required />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Inp label="Handicap Index" value={newPlayer.handicap} onChange={v => setNewPlayer(p => ({...p, handicap: v}))} type="number" placeholder="e.g. 15.3" />
-            <Sel label="Slot" value={newPlayer.slot} onChange={v => setNewPlayer(p => ({...p, slot: v}))}
-              options={[0,1,2,3].map(i => ({ value: String(i), label: `Player ${i + 1}` }))} />
-          </div>
-          <Inp label="Company" value={newPlayer.company} onChange={v => setNewPlayer(p => ({...p, company: v}))} placeholder="e.g. WTech Fire Group" />
-          <Inp label="Email (optional)" value={newPlayer.email} onChange={v => setNewPlayer(p => ({...p, email: v}))} type="email" />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setShowNewPlayer(null)} variant="secondary">Cancel</Btn>
-            <Btn onClick={() => createPlayer(showNewPlayer.id)}>Add Player</Btn>
-          </div>
-        </Modal>
-      )}
-
-      {/* New Auction Item */}
-      {showNewItem && (
-        <Modal title="Add Auction Item" onClose={() => setShowNewItem(false)} width={480}>
-          <Inp label="Title" value={newItem.title} onChange={v => setNewItem(p => ({...p, title: v}))} placeholder="e.g. Weekend Break" required />
-          <Inp label="Description" value={newItem.description} onChange={v => setNewItem(p => ({...p, description: v}))} placeholder="e.g. 2 nights for 2 in a 4-star hotel" />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <Inp label="Emoji" value={newItem.emoji} onChange={v => setNewItem(p => ({...p, emoji: v}))} placeholder="🏆" />
-            <Inp label="Starting Bid (€)" value={newItem.start_bid} onChange={v => setNewItem(p => ({...p, start_bid: v}))} type="number" placeholder="100" />
-            <Inp label="Closes At" value={newItem.closes_at} onChange={v => setNewItem(p => ({...p, closes_at: v}))} placeholder="17:30" />
-          </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setShowNewItem(false)} variant="secondary">Cancel</Btn>
-            <Btn onClick={createAuctionItem}>Add Item</Btn>
-          </div>
-        </Modal>
-      )}
-
-      {/* New Sponsored Hole */}
-      {showSponsor && (
-        <Modal title="Add Sponsored Hole" onClose={() => setShowSponsor(false)} width={440}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Sel label="Hole" value={newSponsor.hole_index} onChange={v => setNewSponsor(p => ({...p, hole_index: v}))}
-              options={Array.from({length:18},(_,i)=>({ value: String(i), label: `Hole ${i+1}` }))} />
-            <Sel label="Type" value={newSponsor.type} onChange={v => setNewSponsor(p => ({...p, type: v}))}
-              options={[{ value: "nearest_pin", label: "🎯 Nearest the Pin" }, { value: "longest_drive", label: "🏌️ Longest Drive" }, { value: "custom", label: "Custom" }]} />
-          </div>
-          <Inp label="Sponsor Name" value={newSponsor.sponsor_name} onChange={v => setNewSponsor(p => ({...p, sponsor_name: v}))} placeholder="e.g. Acme Ltd" />
-          <Inp label="Sponsor Colour" value={newSponsor.sponsor_color} onChange={v => setNewSponsor(p => ({...p, sponsor_color: v}))} type="color" />
-          <Inp label="Prize Description" value={newSponsor.prize_desc} onChange={v => setNewSponsor(p => ({...p, prize_desc: v}))} placeholder="e.g. A round of golf for 4" />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setShowSponsor(false)} variant="secondary">Cancel</Btn>
-            <Btn onClick={createSponsoredHole}>Add Sponsor</Btn>
-          </div>
-        </Modal>
-      )}
-
-      {/* New Course */}
-      {showNewCourse && (
-        <Modal title="Add Course to Library" onClose={() => setShowNewCourse(false)} width={480}>
-          <Inp label="Course Name" value={newCourse.name} onChange={v => setNewCourse(p => ({...p, name: v}))} placeholder="e.g. Castle Golf Club" required />
-          <Inp label="Location" value={newCourse.location} onChange={v => setNewCourse(p => ({...p, location: v}))} placeholder="e.g. Rathfarnham, Dublin" />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <Inp label="Par" value={newCourse.par} onChange={v => setNewCourse(p => ({...p, par: v}))} type="number" placeholder="72" />
-            <Inp label="Rating" value={newCourse.rating} onChange={v => setNewCourse(p => ({...p, rating: v}))} placeholder="70.0" />
-            <Inp label="Slope" value={newCourse.slope} onChange={v => setNewCourse(p => ({...p, slope: v}))} type="number" placeholder="125" />
-          </div>
-          <div style={{ padding: "10px 14px", background: T.navyMd, borderRadius: 8, fontSize: 12, color: T.textMd, marginBottom: 16 }}>
-            ℹ️ Holes will be created with default values (Par 4, SI 1-18). You can edit exact par and SI values in Supabase afterwards.
-          </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setShowNewCourse(false)} variant="secondary">Cancel</Btn>
+          <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:12,color:T.textMd,marginBottom:14}}>ℹ️ Holes created with default values (Par 4, SI 1–18). Edit in Supabase if needed.</div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowNewCourse(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createCourse}>Add Course</Btn>
           </div>
         </Modal>
       )}
 
-      {/* Edit Course */}
-      {editCourse && (
-        <Modal title={`Edit — ${editCourse.name}`} onClose={() => setEditCourse(null)} width={480}>
-          <Inp label="Course Name" value={editCourse.name} onChange={v => setEditCourse(p => ({...p, name: v}))} required />
-          <Inp label="Location" value={editCourse.location || ""} onChange={v => setEditCourse(p => ({...p, location: v}))} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <Inp label="Par" value={editCourse.par} onChange={v => setEditCourse(p => ({...p, par: v}))} type="number" />
-            <Inp label="Rating" value={editCourse.rating} onChange={v => setEditCourse(p => ({...p, rating: v}))} />
-            <Inp label="Slope" value={editCourse.slope} onChange={v => setEditCourse(p => ({...p, slope: v}))} type="number" />
+      {editCourse&&(
+        <Modal title={`Edit — ${editCourse.name}`} onClose={()=>setEditCourse(null)} width={480}>
+          <Inp label="Course Name" value={editCourse.name} onChange={v=>setEditCourse(p=>({...p,name:v}))} required/>
+          <Inp label="Location" value={editCourse.location||""} onChange={v=>setEditCourse(p=>({...p,location:v}))}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+            <Inp label="Par" value={editCourse.par} onChange={v=>setEditCourse(p=>({...p,par:v}))} type="number"/>
+            <Inp label="Rating" value={editCourse.rating} onChange={v=>setEditCourse(p=>({...p,rating:v}))}/>
+            <Inp label="Slope" value={editCourse.slope} onChange={v=>setEditCourse(p=>({...p,slope:v}))} type="number"/>
           </div>
-          <div style={{ padding: "10px 14px", background: T.navyMd, borderRadius: 8, fontSize: 12, color: T.textMd, marginBottom: 16 }}>
-            ℹ️ To edit individual hole par and SI values, update them directly in Supabase table editor.
-          </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <Btn onClick={() => setEditCourse(null)} variant="secondary">Cancel</Btn>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setEditCourse(null)} variant="secondary">Cancel</Btn>
             <Btn onClick={updateCourse}>Save Changes</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showNewTeam&&(
+        <Modal title="Add Team" onClose={()=>setShowNewTeam(false)} width={400}>
+          <Inp label="Team Name" value={newTeam.name} onChange={v=>setNewTeam(p=>({...p,name:v}))} placeholder="e.g. Team Birdie" required/>
+          <Inp label="PIN (4 digits)" value={newTeam.pin} onChange={v=>setNewTeam(p=>({...p,pin:v.slice(0,4)}))} placeholder="e.g. 1234"/>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowNewTeam(false)} variant="secondary">Cancel</Btn>
+            <Btn onClick={createTeam}>Add Team</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showNewPlayer&&(
+        <Modal title={`Add Player to ${showNewPlayer.name}`} onClose={()=>setShowNewPlayer(null)} width={440}>
+          <Inp label="Full Name" value={newPlayer.name} onChange={v=>setNewPlayer(p=>({...p,name:v}))} placeholder="e.g. Ted Wright" required/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <Inp label="Handicap Index" value={newPlayer.handicap} onChange={v=>setNewPlayer(p=>({...p,handicap:v}))} type="number" placeholder="e.g. 15.3"/>
+            <Inp label="Company" value={newPlayer.company} onChange={v=>setNewPlayer(p=>({...p,company:v}))} placeholder="e.g. WTech"/>
+          </div>
+          <Inp label="Email (optional)" value={newPlayer.email} onChange={v=>setNewPlayer(p=>({...p,email:v}))} type="email"/>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowNewPlayer(null)} variant="secondary">Cancel</Btn>
+            <Btn onClick={()=>createPlayer(showNewPlayer.id)}>Add Player</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showNewItem&&(
+        <Modal title="Add Auction Item" onClose={()=>setShowNewItem(false)} width={480}>
+          <Inp label="Title" value={newItem.title} onChange={v=>setNewItem(p=>({...p,title:v}))} placeholder="e.g. Weekend Break" required/>
+          <Inp label="Description" value={newItem.description} onChange={v=>setNewItem(p=>({...p,description:v}))} placeholder="e.g. 2 nights for 2 in a 4-star hotel"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+            <Inp label="Emoji" value={newItem.emoji} onChange={v=>setNewItem(p=>({...p,emoji:v}))} placeholder="🏆"/>
+            <Inp label="Starting Bid (€)" value={newItem.start_bid} onChange={v=>setNewItem(p=>({...p,start_bid:v}))} type="number" placeholder="100"/>
+            <Inp label="Closes At" value={newItem.closes_at} onChange={v=>setNewItem(p=>({...p,closes_at:v}))} placeholder="17:30"/>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowNewItem(false)} variant="secondary">Cancel</Btn>
+            <Btn onClick={createAuctionItem}>Add Item</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {showNewSponsor&&(
+        <Modal title="Add Sponsored Hole" onClose={()=>setShowNewSponsor(false)} width={440}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <Sel label="Hole" value={newSponsor.hole_index} onChange={v=>setNewSponsor(p=>({...p,hole_index:v}))} options={Array.from({length:18},(_,i)=>({value:String(i),label:`Hole ${i+1}`}))}/>
+            <Sel label="Type" value={newSponsor.type} onChange={v=>setNewSponsor(p=>({...p,type:v}))} options={[{value:"nearest_pin",label:"🎯 Nearest the Pin"},{value:"longest_drive",label:"🏌️ Longest Drive"},{value:"custom",label:"Custom"}]}/>
+          </div>
+          <Inp label="Sponsor Name" value={newSponsor.sponsor_name} onChange={v=>setNewSponsor(p=>({...p,sponsor_name:v}))} placeholder="e.g. Acme Ltd"/>
+          <Inp label="Sponsor Colour" value={newSponsor.sponsor_color} onChange={v=>setNewSponsor(p=>({...p,sponsor_color:v}))} type="color"/>
+          <Inp label="Prize Description" value={newSponsor.prize_desc} onChange={v=>setNewSponsor(p=>({...p,prize_desc:v}))} placeholder="e.g. Round of golf for 4"/>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowNewSponsor(false)} variant="secondary">Cancel</Btn>
+            <Btn onClick={createSponsor}>Add Sponsor</Btn>
           </div>
         </Modal>
       )}
