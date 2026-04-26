@@ -195,7 +195,7 @@ export default function AdminPortal() {
     if (!newComp.name) return;
     try {
       // Need an admin_id — use a placeholder for now
-      const data = { ...newComp, admin_id: "00000000-0000-0000-0000-000000000000", handicap_allowance: parseFloat(newComp.handicap_allowance) };
+      const data = { ...newComp, admin_id: "8358854e-ad67-4889-912d-59a6d0b49355", handicap_allowance: parseFloat(newComp.handicap_allowance) };
       const res = await sb.post("competitions", [data]);
       setCompetitions(prev => [res[0], ...prev]);
       setActiveComp(res[0]);
@@ -229,7 +229,7 @@ export default function AdminPortal() {
   const createPlayer = async (teamId) => {
     if (!newPlayer.name) return;
     try {
-      const res = await sb.post("players", [{ ...newPlayer, competition_id: activeComp.id, team_id: teamId, handicap: parseFloat(newPlayer.handicap) || null, slot: parseInt(newPlayer.slot) }]);
+      const res = await sb.post("players", [{ ...newPlayer, competition_id: activeComp.id, team_id: teamId, admin_id: "8358854e-ad67-4889-912d-59a6d0b49355", handicap: parseFloat(newPlayer.handicap) || null, slot: parseInt(newPlayer.slot) }]);
       setPlayers(prev => [...prev, res[0]]);
       setShowNewPlayer(null);
       setNewPlayer({ name: "", handicap: "", company: "", email: "", slot: "0" });
