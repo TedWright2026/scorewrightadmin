@@ -107,6 +107,116 @@ const ImgUpload = ({label, value, onChange}) => (
   </div>
 );
 
+// ─── AUCTION TAB ─────────────────────────────────────────────────────────────
+function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, T}) {
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  // Auto-select first item
+  useEffect(() => {
+    if (auctionItems.length > 0 && !selectedItem) setSelectedItem(auctionItems[0]);
+  }, [auctionItems]);
+
+  const itemBids = selectedItem
+    ? [...auctionBids.filter(b => b.item_id === selectedItem.id)].sort((a,b) => b.amount - a.amount)
+    : [];
+  const top = itemBids[0];
+
+  if (auctionItems.length === 0) return (
+    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:60,textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:12}}>❤️</div>
+      <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No auction items yet</div>
+      <button onClick={onAdd} style={{background:T.blue,color:T.white,border:"none",borderRadius:8,padding:"10px 20px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add First Item</button>
+    </div>
+  );
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,height:"calc(100vh - 280px)"}}>
+
+      {/* LEFT — item list */}
+      <div style={{display:"flex",flexDirection:"column",gap:10,overflowY:"auto"}}>
+        {auctionItems.map(item => {
+          const bids = auctionBids.filter(b=>b.item_id===item.id);
+          const topBid = [...bids].sort((a,b)=>b.amount-a.amount)[0];
+          const isSelected = selectedItem?.id === item.id;
+          return (
+            <div key={item.id} onClick={()=>setSelectedItem(item)}
+              style={{background:isSelected?`${T.blue}22`:T.card,border:`2px solid ${isSelected?T.blue:T.border}`,borderRadius:12,padding:"13px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"all 0.15s"}}>
+              {item.image ? (
+                <img src={item.image} alt={item.title} style={{width:56,height:56,objectFit:"cover",borderRadius:8,flexShrink:0}}/>
+              ) : (
+                <div style={{width:56,height:56,background:T.navyMd,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>🏆</div>
+              )}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
+                  {item.title}
+                  {item.is_closed&&<span style={{fontSize:10,background:T.textDk+"33",color:T.textDk,padding:"1px 7px",borderRadius:8}}>CLOSED</span>}
+                </div>
+                <div style={{fontSize:11,color:T.textMd,marginTop:2}}>{item.description}</div>
+                <div style={{fontSize:11,color:T.red,marginTop:3}}>Start €{item.start_bid} · {bids.length} bid{bids.length!==1?"s":""}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontSize:20,fontWeight:900,color:topBid?T.green:T.textDk}}>€{topBid?topBid.amount:item.start_bid}</div>
+                {topBid&&<div style={{fontSize:11,color:T.amber,fontWeight:700}}>🏆 {topBid.team_name}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* RIGHT — bid feed for selected item */}
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {selectedItem ? (<>
+          {/* Item header */}
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,background:T.navyMd}}>
+            <div style={{fontWeight:800,fontSize:15}}>{selectedItem.title}</div>
+            <div style={{fontSize:11,color:T.textMd,marginTop:2}}>{selectedItem.description}</div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>onToggleClose(selectedItem)}
+                style={{padding:"5px 14px",borderRadius:8,border:"none",background:selectedItem.is_closed?T.green:T.red,color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {selectedItem.is_closed?"↺ Reopen":"⏹ Close"}
+              </button>
+              <button onClick={()=>onDelete(selectedItem.id)}
+                style={{padding:"5px 14px",borderRadius:8,border:`1px solid ${T.border}`,background:"none",color:T.red,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                🗑 Delete
+              </button>
+            </div>
+          </div>
+
+          {/* Bid summary */}
+          <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",gap:20}}>
+            <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Starting Bid</div><div style={{fontSize:18,fontWeight:900,color:T.textMd}}>€{selectedItem.start_bid}</div></div>
+            <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Current Top</div><div style={{fontSize:18,fontWeight:900,color:top?T.green:T.textDk}}>€{top?top.amount:selectedItem.start_bid}</div></div>
+            <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Total Bids</div><div style={{fontSize:18,fontWeight:900,color:T.blue}}>{itemBids.length}</div></div>
+            {top&&<div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Winning Team</div><div style={{fontSize:14,fontWeight:800,color:T.amber}}>🏆 {top.team_name}</div></div>}
+          </div>
+
+          {/* All bids — sorted highest to lowest */}
+          <div style={{flex:1,overflowY:"auto"}}>
+            {itemBids.length===0 ? (
+              <div style={{padding:30,textAlign:"center",color:T.textDk,fontSize:13}}>No bids yet for this item</div>
+            ) : itemBids.map((bid,idx)=>(
+              <div key={bid.id} style={{padding:"12px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:idx===0?`${T.green}11`:"transparent"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:idx===0?T.green:T.navyMd,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.white,flexShrink:0}}>
+                    {idx+1}
+                  </div>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14,color:idx===0?T.green:T.text}}>{bid.team_name}</div>
+                    <div style={{fontSize:11,color:T.textDk}}>{new Date(bid.placed_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                </div>
+                <div style={{fontWeight:900,fontSize:20,color:idx===0?T.green:T.text}}>€{bid.amount}</div>
+              </div>
+            ))}
+          </div>
+        </>) : (
+          <div style={{padding:40,textAlign:"center",color:T.textDk}}>Select an item to see bids</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── SPLASH ──────────────────────────────────────────────────────────────────
 function Splash({onDone}) {
   const [phase, setPhase] = useState(0);
@@ -746,57 +856,14 @@ export default function AdminPortal() {
 
               {/* AUCTION TAB */}
               {compTab==="auction"&&(
-                <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:20}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                    {auctionItems.length===0?(
-                      <Card style={{padding:60,textAlign:"center"}}>
-                        <div style={{fontSize:40,marginBottom:12}}>❤️</div>
-                        <div style={{fontSize:16,color:T.textMd,marginBottom:16}}>No auction items yet</div>
-                        <Btn onClick={()=>setShowNewItem(true)}>+ Add First Item</Btn>
-                      </Card>
-                    ):auctionItems.map(item=>{
-                      const itemBids=auctionBids.filter(b=>b.item_id===item.id).sort((a,b)=>b.amount-a.amount);
-                      const top=itemBids[0];
-                      return(
-                        <Card key={item.id}>
-                          <div style={{padding:"13px 16px",display:"flex",alignItems:"center",gap:12}}>
-                            {item.image?(
-                              <img src={item.image} alt={item.title} style={{width:72,height:72,objectFit:"cover",borderRadius:10,flexShrink:0}}/>
-                            ):(
-                              <div style={{width:72,height:72,background:T.navyMd,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0}}>🏆</div>
-                            )}
-                            <div style={{flex:1}}>
-                              <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>{item.title}{item.is_closed&&<span style={{fontSize:10,fontWeight:700,background:T.textDk+"33",color:T.textDk,padding:"1px 8px",borderRadius:10}}>CLOSED</span>}</div>
-                              <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{item.description}</div>
-                              <div style={{fontSize:11,color:T.red,marginTop:3}}>⏰ Closes {item.closes_at} · Start €{item.start_bid}</div>
-                            </div>
-                            <div style={{textAlign:"right",flexShrink:0}}>
-                              <div style={{fontSize:22,fontWeight:900,color:top?T.green:T.textDk}}>€{top?top.amount:item.start_bid}</div>
-                              <div style={{fontSize:11,color:T.textMd}}>{itemBids.length} bid{itemBids.length!==1?"s":""}</div>
-                              {top&&<div style={{fontSize:11,color:T.amber}}>🏆 {top.team_name}</div>}
-                            </div>
-                            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                              <Btn onClick={()=>toggleAuctionClose(item)} variant={item.is_closed?"success":"danger"} small>{item.is_closed?"Reopen":"Close"}</Btn>
-                              <Btn onClick={()=>deleteAuctionItem(item.id)} variant="danger" small>🗑 Delete</Btn>
-                            </div>
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                  <Card>
-                    <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontWeight:700}}>Live Bid Feed</div>
-                    <div style={{maxHeight:500,overflowY:"auto"}}>
-                      {auctionBids.length===0?<div style={{padding:30,textAlign:"center",color:T.textDk,fontSize:13}}>No bids yet</div>:auctionBids.map(bid=>{
-                        const item=auctionItems.find(i=>i.id===bid.item_id);
-                        return(<div key={bid.id} style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <div><div style={{fontWeight:600,fontSize:13}}>{bid.team_name}</div><div style={{fontSize:11,color:T.textMd}}>{item?.title}</div></div>
-                          <div style={{textAlign:"right"}}><div style={{fontWeight:900,fontSize:16,color:T.green}}>€{bid.amount}</div><div style={{fontSize:10,color:T.textDk}}>{new Date(bid.placed_at).toLocaleTimeString()}</div></div>
-                        </div>);
-                      })}
-                    </div>
-                  </Card>
-                </div>
+                <AuctionTab
+                  auctionItems={auctionItems}
+                  auctionBids={auctionBids}
+                  onToggleClose={toggleAuctionClose}
+                  onDelete={deleteAuctionItem}
+                  onAdd={()=>setShowNewItem(true)}
+                  T={T}
+                />
               )}
 
               {/* SCORES TAB */}
