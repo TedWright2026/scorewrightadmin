@@ -469,7 +469,84 @@ export default function AdminPortal() {
             </div>
           )}
 
-          {/* ── TEAMS & PLAYERS ── */}
+          {/* ── COMPETITIONS ── */}
+          {view === "competitions" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <div style={{ fontSize: 13, color: T.textMd }}>{competitions.length} competition{competitions.length !== 1 ? "s" : ""} total</div>
+                <Btn onClick={() => setShowNewComp(true)}>+ New Competition</Btn>
+              </div>
+              {competitions.length === 0 ? (
+                <Card style={{ padding: 60, textAlign: "center" }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>🏆</div>
+                  <div style={{ fontSize: 16, color: T.textMd, marginBottom: 16 }}>No competitions yet</div>
+                  <Btn onClick={() => setShowNewComp(true)}>+ Create First Competition</Btn>
+                </Card>
+              ) : (
+                <Card>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Format</th>
+                        <th>Location</th>
+                        <th>Date</th>
+                        <th>Teams</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {competitions.map(c => {
+                        const compTeams = teams.filter(t => t.competition_id === c.id);
+                        const isActive = activeComp?.id === c.id;
+                        return (
+                          <tr key={c.id} style={{ background: isActive ? `${T.blue}11` : "transparent" }}>
+                            <td style={{ fontWeight: 700, fontSize: 14 }}>
+                              {isActive && <span style={{ color: T.blue, marginRight: 6 }}>●</span>}
+                              {c.name}
+                            </td>
+                            <td>
+                              <span style={{ background: c.format === "scramble" ? T.amberLt : T.greenLt, color: c.format === "scramble" ? "#78350f" : "#14532d", padding: "2px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+                                {c.format === "scramble" ? "Scramble" : "Hole Points Race"}
+                              </span>
+                            </td>
+                            <td style={{ color: T.textMd }}>{c.location || "–"}</td>
+                            <td style={{ color: T.textMd }}>{c.start_date || "–"}</td>
+                            <td style={{ fontWeight: 700 }}>{compTeams.length}</td>
+                            <td>{statusPill(c.status)}</td>
+                            <td>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <Btn onClick={() => { setActiveComp(c); setView("teams"); }} small>
+                                  {isActive ? "✓ Active" : "Select"}
+                                </Btn>
+                                {c.status === "draft" && (
+                                  <Btn onClick={async () => {
+                                    await sb.patch("competitions", c.id, { status: "live" });
+                                    setCompetitions(prev => prev.map(x => x.id === c.id ? {...x, status: "live"} : x));
+                                    if (isActive) setActiveComp(prev => ({...prev, status: "live"}));
+                                    showToast(`${c.name} is now live!`);
+                                  }} variant="success" small>▶ Go Live</Btn>
+                                )}
+                                {c.status === "live" && (
+                                  <Btn onClick={async () => {
+                                    await sb.patch("competitions", c.id, { status: "finished" });
+                                    setCompetitions(prev => prev.map(x => x.id === c.id ? {...x, status: "finished"} : x));
+                                    if (isActive) setActiveComp(prev => ({...prev, status: "finished"}));
+                                    showToast(`${c.name} finished`);
+                                  }} variant="danger" small>⏹ Finish</Btn>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+            </div>
+          )}
           {view === "teams" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
