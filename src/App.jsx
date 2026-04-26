@@ -221,12 +221,15 @@ export default function AdminPortal() {
   const [auctionBids, setAuctionBids] = useState([]);
   const [scores, setScores] = useState([]);
   const [sponsoredHoles, setSponsoredHoles] = useState([]);
+  const [compCourses, setCompCourses] = useState([]); // courses linked to selected comp
   const [toast, setToast] = useState(null);
 
   // Modals
   const [showNewComp, setShowNewComp] = useState(false);
   const [showNewCourse, setShowNewCourse] = useState(false);
   const [editCourse, setEditCourse] = useState(null);
+  const [showEditCompCourses, setShowEditCompCourses] = useState(false);
+  const [editCompCourseIds, setEditCompCourseIds] = useState(["","","",""]);
   const [showNewTeam, setShowNewTeam] = useState(false);
   const [editTeam, setEditTeam] = useState(null);
   const [showNewPlayer, setShowNewPlayer] = useState(null);
@@ -258,16 +261,40 @@ export default function AdminPortal() {
 
   const loadCompDetail = async (compId) => {
     try {
-      const [t,p,ai,ab,sc,sh] = await Promise.all([
+      const [t,p,ai,ab,sc,sh,cc] = await Promise.all([
         sb.get("teams",`select=*&competition_id=eq.${compId}&order=name`),
         sb.get("players",`select=*&competition_id=eq.${compId}&order=name`),
         sb.get("auction_items",`select=*&competition_id=eq.${compId}&order=sort_order`),
         sb.get("auction_bids",`select=*&competition_id=eq.${compId}&order=placed_at.desc`),
         sb.get("scores",`select=*&competition_id=eq.${compId}`),
         sb.get("sponsored_holes",`select=*&competition_id=eq.${compId}&order=hole_index`),
+        sb.get("competition_courses",`select=*&competition_id=eq.${compId}&order=day`),
       ]);
       setTeams(t); setPlayers(p); setAuctionItems(ai); setAuctionBids(ab); setScores(sc); setSponsoredHoles(sh);
+      setCompCourses(cc);
     } catch(e) { showToast(e.message,"error"); }
+  };
+
+  const updateCompCourses = async () => {
+    if (!selectedComp) return;
+    try {
+      // Delete all existing course links for this competition
+      const r = await fetch(`${SB_URL}/rest/v1/competition_courses?competition_id=eq.${selectedComp.id}`, { method:"DELETE", headers: sb.h });
+      if (!r.ok) throw new Error(await r.text());
+      // Re-insert with new selections
+      if (selectedComp.format === "scramble") {
+        const cid = editCompCourseIds[0];
+        if (cid) await sb.post("competition_courses", [{ competition_id: selectedComp.id, course_id: cid, day: 1 }]);
+      } else {
+        const links = editCompCourseIds.map((cid,i) => cid ? { competition_id: selectedComp.id, course_id: cid, day: i+1 } : null).filter(Boolean);
+        if (links.length > 0) await sb.post("competition_courses", links);
+      }
+      // Reload
+      const cc = await sb.get("competition_courses", `select=*&competition_id=eq.${selectedComp.id}&order=day`);
+      setCompCourses(cc);
+      setShowEditCompCourses(false);
+      showToast("Courses updated!");
+    } catch(e) { showToast(e.message, "error"); }
   };
 
   const createComp = async () => {
@@ -615,9 +642,26 @@ export default function AdminPortal() {
               <div style={{background:T.navyMd,borderRadius:12,padding:"14px 20px",marginBottom:20,display:"flex",gap:24,alignItems:"center",border:`1px solid ${T.border}`,flexWrap:"wrap"}}>
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Format</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.format==="scramble"?"Scramble":"Hole Points Race"}</div></div>
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Location</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.location||"–"}</div></div>
+                <div>
+                  <div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Course{compCourses.length!==1?"s":""}</div>
+                  <div style={{fontWeight:700,marginTop:2,fontSize:13}}>
+                    {compCourses.length===0 ? <span style={{color:T.red}}>⚠️ No course set</span> :
+                      compCourses.map(cc=>{
+                        const c = courses.find(x=>x.id===cc.course_id);
+                        return <div key={cc.id}>{selectedComp.format==="hole_points_race"?`Day ${cc.day}: `:""}{c?.name||"Unknown"}</div>;
+                      })
+                    }
+                  </div>
+                </div>
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Teams</div><div style={{fontWeight:700,marginTop:2}}>{teams.length}</div></div>
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Players</div><div style={{fontWeight:700,marginTop:2}}>{players.length}</div></div>
                 {selectedComp.notes&&<div style={{flex:1,fontSize:12,color:T.textMd,fontStyle:"italic"}}>{selectedComp.notes}</div>}
+                <Btn onClick={()=>{
+                  const ids = ["","","",""];
+                  compCourses.forEach(cc=>{ if(cc.day>=1&&cc.day<=4) ids[cc.day-1]=cc.course_id; });
+                  setEditCompCourseIds(ids);
+                  setShowEditCompCourses(true);
+                }} variant="secondary" small>✏️ Change Course{selectedComp.format==="hole_points_race"?"s":""}</Btn>
               </div>
               <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:20}}>
                 <Tab label="Teams & Players" active={compTab==="teams"} onClick={()=>setCompTab("teams")} badge={teams.length||null}/>
@@ -964,6 +1008,34 @@ export default function AdminPortal() {
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn onClick={()=>setShowNewSponsor(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createSponsor}>Add Sponsor</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit Competition Courses */}
+      {showEditCompCourses&&selectedComp&&(
+        <Modal title={`Change Course${selectedComp.format==="hole_points_race"?"s":""} — ${selectedComp.name}`} onClose={()=>setShowEditCompCourses(false)} width={500}>
+          {selectedComp.format==="scramble"?(
+            <Sel label="Course" value={editCompCourseIds[0]} onChange={v=>{const ids=[...editCompCourseIds];ids[0]=v;setEditCompCourseIds(ids);}}
+              options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par})`}))]}/>
+          ):(
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Courses — one per day</label>
+              {[0,1,2,3].map(day=>(
+                <div key={day} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textMd,width:48,flexShrink:0}}>Day {day+1}</div>
+                  <select value={editCompCourseIds[day]||""} onChange={e=>{const ids=[...editCompCourseIds];ids[day]=e.target.value;setEditCompCourseIds(ids);}}
+                    style={{flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                    <option value="">— Optional —</option>
+                    {courses.map(c=><option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn onClick={()=>setShowEditCompCourses(false)} variant="secondary">Cancel</Btn>
+            <Btn onClick={updateCompCourses}>Save Changes</Btn>
           </div>
         </Modal>
       )}
