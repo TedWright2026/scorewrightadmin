@@ -323,9 +323,24 @@ export default function AdminPortal() {
   const updateCourse = async () => {
     if(!editCourse) return;
     try {
-      await sb.patch("courses",editCourse.id,{name:editCourse.name,location:editCourse.location,par:parseInt(editCourse.par),rating:parseFloat(editCourse.rating),slope:parseInt(editCourse.slope)});
-      setCourses(prev=>prev.map(c=>c.id===editCourse.id?{...c,...editCourse}:c));
+      // Build updated holes array with edited par and si values
+      const holes = editCourse.holes.map(h => ({
+        h: h.h,
+        par: parseInt(h.par) || 4,
+        si: parseInt(h.si) || h.h,
+      }));
+      await sb.patch("courses",editCourse.id,{name:editCourse.name,location:editCourse.location,par:parseInt(editCourse.par),rating:parseFloat(editCourse.rating),slope:parseInt(editCourse.slope),holes});
+      setCourses(prev=>prev.map(c=>c.id===editCourse.id?{...c,...editCourse,holes}:c));
       setEditCourse(null); showToast("Course updated!");
+    } catch(e) { showToast(e.message,"error"); }
+  };
+
+  const deleteCourse = async (id) => {
+    if(!confirm("Delete this course from the library? This cannot be undone.")) return;
+    try {
+      await sb.del("courses",id);
+      setCourses(prev=>prev.filter(c=>c.id!==id));
+      setEditCourse(null); showToast("Course deleted");
     } catch(e) { showToast(e.message,"error"); }
   };
 
@@ -570,7 +585,11 @@ export default function AdminPortal() {
                 <table>
                   <thead><tr><th>Name</th><th>Format</th><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {competitions.map(c=>(
+                    {[...competitions].sort((a,b)=>{
+                      const order={live:0,draft:1,finished:2};
+                      const diff=(order[a.status]??1)-(order[b.status]??1);
+                      return diff!==0?diff:a.name.localeCompare(b.name);
+                    }).map(c=>(
                       <tr key={c.id}>
                         <td style={{fontWeight:700}}>{c.name}</td>
                         <td><span style={{background:c.format==="scramble"?T.amberLt:T.greenLt,color:c.format==="scramble"?"#78350f":"#14532d",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>{c.format==="scramble"?"Scramble":"Hole Points Race"}</span></td>
@@ -822,15 +841,55 @@ export default function AdminPortal() {
       )}
 
       {editCourse&&(
-        <Modal title={`Edit — ${editCourse.name}`} onClose={()=>setEditCourse(null)} width={480}>
-          <Inp label="Course Name" value={editCourse.name} onChange={v=>setEditCourse(p=>({...p,name:v}))} required/>
-          <Inp label="Location" value={editCourse.location||""} onChange={v=>setEditCourse(p=>({...p,location:v}))}/>
+        <Modal title={`Edit — ${editCourse.name}`} onClose={()=>setEditCourse(null)} width={680}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <Inp label="Course Name" value={editCourse.name} onChange={v=>setEditCourse(p=>({...p,name:v}))} required/>
+            <Inp label="Location" value={editCourse.location||""} onChange={v=>setEditCourse(p=>({...p,location:v}))}/>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
             <Inp label="Par" value={editCourse.par} onChange={v=>setEditCourse(p=>({...p,par:v}))} type="number"/>
             <Inp label="Rating" value={editCourse.rating} onChange={v=>setEditCourse(p=>({...p,rating:v}))}/>
             <Inp label="Slope" value={editCourse.slope} onChange={v=>setEditCourse(p=>({...p,slope:v}))} type="number"/>
           </div>
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+
+          {/* Hole editor */}
+          {editCourse.holes&&Array.isArray(editCourse.holes)&&(
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Hole Par & Stroke Index</label>
+              <div style={{background:T.navyMd,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
+                {/* Header */}
+                <div style={{display:"grid",gridTemplateColumns:"40px repeat(18,1fr)",gap:0,background:T.navy,padding:"6px 10px"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textMd,textAlign:"center"}}></div>
+                  {editCourse.holes.map(h=>(
+                    <div key={h.h} style={{fontSize:10,fontWeight:700,color:T.textMd,textAlign:"center"}}>{h.h}</div>
+                  ))}
+                </div>
+                {/* Par row */}
+                <div style={{display:"grid",gridTemplateColumns:"40px repeat(18,1fr)",gap:0,padding:"6px 10px",borderTop:`1px solid ${T.border}`,alignItems:"center"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textMd}}>PAR</div>
+                  {editCourse.holes.map((h,i)=>(
+                    <input key={h.h} type="number" value={h.par} min={3} max={5}
+                      onChange={e=>{const holes=[...editCourse.holes];holes[i]={...holes[i],par:parseInt(e.target.value)||4};setEditCourse(p=>({...p,holes}));}}
+                      style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${T.border}`,color:T.white,fontSize:12,fontWeight:700,textAlign:"center",outline:"none",padding:"2px 0",fontFamily:"inherit"}}/>
+                  ))}
+                </div>
+                {/* SI row */}
+                <div style={{display:"grid",gridTemplateColumns:"40px repeat(18,1fr)",gap:0,padding:"6px 10px",borderTop:`1px solid ${T.border}`,alignItems:"center"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:T.textMd}}>SI</div>
+                  {editCourse.holes.map((h,i)=>(
+                    <input key={h.h} type="number" value={h.si} min={1} max={18}
+                      onChange={e=>{const holes=[...editCourse.holes];holes[i]={...holes[i],si:parseInt(e.target.value)||i+1};setEditCourse(p=>({...p,holes}));}}
+                      style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${T.border}`,color:T.amber,fontSize:12,fontWeight:700,textAlign:"center",outline:"none",padding:"2px 0",fontFamily:"inherit"}}/>
+                  ))}
+                </div>
+              </div>
+              <div style={{fontSize:11,color:T.textDk,marginTop:6}}>Par shown in white · SI shown in amber · Click any value to edit</div>
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",alignItems:"center"}}>
+            <Btn onClick={()=>deleteCourse(editCourse.id)} variant="danger">🗑 Delete Course</Btn>
+            <div style={{flex:1}}/>
             <Btn onClick={()=>setEditCourse(null)} variant="secondary">Cancel</Btn>
             <Btn onClick={updateCourse}>Save Changes</Btn>
           </div>
