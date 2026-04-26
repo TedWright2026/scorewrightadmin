@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ─── SUPABASE ────────────────────────────────────────────────────────────────
-const SB_URL = "https://vhutunzzpzwjnrvjcgau.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZodXR1bnp6cHp3am5ydmpjZ2F1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMTQwMTcsImV4cCI6MjA5Mjc5MDAxN30.DhgwK2e_9PFV3A6FSIjehhqpv0Cpk-uKwWrAVzvQ77U";
+const SB_URL = "https://mggtvitmicbzytklmkmm.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1nZ3R2aXRtaWNienl0a2xta21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMTg3NzAsImV4cCI6MjA5Mjc5NDc3MH0.H4ulHFHJQQ_5wvMLdzBrlqBi89SFCiNxuvLNQ9vX-5A";
 
 const sb = {
   h: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation" },
@@ -195,7 +195,7 @@ export default function AdminPortal() {
     if (!newComp.name) return;
     try {
       // Need an admin_id — use a placeholder for now
-      const data = { ...newComp, admin_id: "8358854e-ad67-4889-912d-59a6d0b49355", handicap_allowance: parseFloat(newComp.handicap_allowance) };
+      const data = { ...newComp, admin_id: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65", handicap_allowance: parseFloat(newComp.handicap_allowance) };
       const res = await sb.post("competitions", [data]);
       setCompetitions(prev => [res[0], ...prev]);
       setActiveComp(res[0]);
@@ -229,7 +229,7 @@ export default function AdminPortal() {
   const createPlayer = async (teamId) => {
     if (!newPlayer.name) return;
     try {
-      const res = await sb.post("players", [{ ...newPlayer, competition_id: activeComp.id, team_id: teamId, admin_id: "8358854e-ad67-4889-912d-59a6d0b49355", handicap: parseFloat(newPlayer.handicap) || null, slot: parseInt(newPlayer.slot) }]);
+      const res = await sb.post("players", [{ ...newPlayer, competition_id: activeComp.id, team_id: teamId, admin_id: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65", handicap: parseFloat(newPlayer.handicap) || null, slot: parseInt(newPlayer.slot) }]);
       setPlayers(prev => [...prev, res[0]]);
       setShowNewPlayer(null);
       setNewPlayer({ name: "", handicap: "", company: "", email: "", slot: "0" });
