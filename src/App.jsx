@@ -183,10 +183,11 @@ export default function AdminPortal() {
   };
 
   // ── Forms ──────────────────────────────────────────────────
-  const [newComp, setNewComp] = useState({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "" });
+  const [newComp, setNewComp] = useState({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "", course_ids: [] });
   const [newTeam, setNewTeam] = useState({ name: "", pin: "" });
   const [newPlayer, setNewPlayer] = useState({ name: "", handicap: "", company: "", email: "", slot: "0" });
   const [newCourse, setNewCourse] = useState({ name: "", location: "", par: "72", rating: "70.0", slope: "125" });
+  const [editCourse, setEditCourse] = useState(null);
   const [newItem, setNewItem] = useState({ title: "", description: "", emoji: "🏆", start_bid: "", closes_at: "17:30", sort_order: "0" });
   const [newSponsor, setNewSponsor] = useState({ hole_index: "0", type: "nearest_pin", sponsor_name: "", sponsor_color: "#2563eb", prize_desc: "" });
 
@@ -196,18 +197,44 @@ export default function AdminPortal() {
     try {
       const data = { ...newComp, admin_id: "17b85d21-02a3-492d-bbcc-9b4adc8a6e65", handicap_allowance: parseFloat(newComp.handicap_allowance) };
       const courseId = data.course_id;
+      const courseIds = data.course_ids || [];
       delete data.course_id;
+      delete data.course_ids;
       const res = await sb.post("competitions", [data]);
       const comp = res[0];
-      // Link the course if selected
+      // Scramble — one course, day 1
       if (courseId) {
         await sb.post("competition_courses", [{ competition_id: comp.id, course_id: courseId, day: 1 }]);
+      }
+      // Hole Points Race — multiple courses, one per day
+      if (courseIds.length > 0) {
+        await sb.post("competition_courses", courseIds.map((cid, i) => ({ competition_id: comp.id, course_id: cid, day: i + 1 })));
       }
       setCompetitions(prev => [comp, ...prev]);
       setActiveComp(comp);
       setShowNewComp(false);
-      setNewComp({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "" });
+      setNewComp({ name: "", location: "", format: "scramble", start_date: "", end_date: "", handicap_allowance: "0.75", notes: "", course_id: "", course_ids: [] });
       showToast("Competition created!");
+    } catch(e) { showToast(e.message, "error"); }
+  };
+
+  const deleteComp = async (comp) => {
+    if (!confirm(`⚠️ Delete "${comp.name}"?\n\nThis will permanently delete the competition and ALL associated teams, players, scores and auction data. This cannot be undone.`)) return;
+    try {
+      await sb.del("competitions", comp.id);
+      setCompetitions(prev => prev.filter(c => c.id !== comp.id));
+      if (activeComp?.id === comp.id) setActiveComp(competitions.find(c => c.id !== comp.id) || null);
+      showToast(`${comp.name} deleted`);
+    } catch(e) { showToast(e.message, "error"); }
+  };
+
+  const updateCourse = async () => {
+    if (!editCourse) return;
+    try {
+      await sb.patch("courses", editCourse.id, { name: editCourse.name, location: editCourse.location, par: parseInt(editCourse.par), rating: parseFloat(editCourse.rating), slope: parseInt(editCourse.slope) });
+      setCourses(prev => prev.map(c => c.id === editCourse.id ? { ...c, ...editCourse } : c));
+      setEditCourse(null);
+      showToast("Course updated!");
     } catch(e) { showToast(e.message, "error"); }
   };
 
@@ -536,6 +563,7 @@ export default function AdminPortal() {
                                     showToast(`${c.name} finished`);
                                   }} variant="danger" small>⏹ Finish</Btn>
                                 )}
+                                <Btn onClick={() => deleteComp(c)} variant="danger" small>🗑 Delete</Btn>
                               </div>
                             </td>
                           </tr>
@@ -608,7 +636,7 @@ export default function AdminPortal() {
               </div>
               <Card>
                 <table>
-                  <thead><tr><th>Course</th><th>Location</th><th>Par</th><th>Rating</th><th>Slope</th><th>Holes</th></tr></thead>
+                  <thead><tr><th>Course</th><th>Location</th><th>Par</th><th>Rating</th><th>Slope</th><th>Holes</th><th>Action</th></tr></thead>
                   <tbody>
                     {courses.map(c => (
                       <tr key={c.id}>
@@ -618,6 +646,7 @@ export default function AdminPortal() {
                         <td>{c.rating}</td>
                         <td>{c.slope}</td>
                         <td>{Array.isArray(c.holes) ? c.holes.length : "–"}</td>
+                        <td><Btn onClick={() => setEditCourse({...c, par: String(c.par), rating: String(c.rating), slope: String(c.slope)})} small>✏️ Edit</Btn></td>
                       </tr>
                     ))}
                   </tbody>
@@ -788,8 +817,30 @@ export default function AdminPortal() {
             <Inp label="Handicap Allowance" value={newComp.handicap_allowance} onChange={v => setNewComp(p => ({...p, handicap_allowance: v}))} placeholder="0.75" />
           )}
           <Inp label="Notes" value={newComp.notes} onChange={v => setNewComp(p => ({...p, notes: v}))} placeholder="Any additional info..." />
-          <Sel label="Course" value={newComp.course_id} onChange={v => setNewComp(p => ({...p, course_id: v}))}
-            options={[{ value: "", label: "— Select a course —" }, ...courses.map(c => ({ value: c.id, label: `${c.name} (Par ${c.par})` }))]} />
+          {/* Scramble — single course */}
+          {newComp.format === "scramble" && (
+            <Sel label="Course" value={newComp.course_id} onChange={v => setNewComp(p => ({...p, course_id: v}))}
+              options={[{ value: "", label: "— Select a course —" }, ...courses.map(c => ({ value: c.id, label: `${c.name} (Par ${c.par})` }))]} />
+          )}
+          {/* Hole Points Race — multiple courses, one per day */}
+          {newComp.format === "hole_points_race" && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.textMd, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Courses (one per day — in order)</label>
+              {[0,1,2,3].map(day => (
+                <div key={day} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMd, width: 48, flexShrink: 0 }}>Day {day + 1}</div>
+                  <select value={newComp.course_ids[day] || ""} onChange={e => {
+                    const ids = [...(newComp.course_ids || [])];
+                    ids[day] = e.target.value;
+                    setNewComp(p => ({...p, course_ids: ids}));
+                  }} style={{ flex: 1, background: T.input, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 12px", color: T.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">— Optional —</option>
+                    {courses.map(c => <option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
             <Btn onClick={() => setShowNewComp(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createComp}>Create Competition</Btn>
@@ -879,6 +930,26 @@ export default function AdminPortal() {
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
             <Btn onClick={() => setShowNewCourse(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createCourse}>Add Course</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit Course */}
+      {editCourse && (
+        <Modal title={`Edit — ${editCourse.name}`} onClose={() => setEditCourse(null)} width={480}>
+          <Inp label="Course Name" value={editCourse.name} onChange={v => setEditCourse(p => ({...p, name: v}))} required />
+          <Inp label="Location" value={editCourse.location || ""} onChange={v => setEditCourse(p => ({...p, location: v}))} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+            <Inp label="Par" value={editCourse.par} onChange={v => setEditCourse(p => ({...p, par: v}))} type="number" />
+            <Inp label="Rating" value={editCourse.rating} onChange={v => setEditCourse(p => ({...p, rating: v}))} />
+            <Inp label="Slope" value={editCourse.slope} onChange={v => setEditCourse(p => ({...p, slope: v}))} type="number" />
+          </div>
+          <div style={{ padding: "10px 14px", background: T.navyMd, borderRadius: 8, fontSize: 12, color: T.textMd, marginBottom: 16 }}>
+            ℹ️ To edit individual hole par and SI values, update them directly in Supabase table editor.
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+            <Btn onClick={() => setEditCourse(null)} variant="secondary">Cancel</Btn>
+            <Btn onClick={updateCourse}>Save Changes</Btn>
           </div>
         </Modal>
       )}
