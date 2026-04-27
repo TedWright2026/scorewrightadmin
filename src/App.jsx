@@ -838,7 +838,7 @@ export default function AdminPortal() {
                           <div style={{background:sh.sponsor_color,padding:"13px 16px",borderRadius:"12px 12px 0 0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                             <div>
                               <div style={{fontSize:10,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:1}}>Hole {sh.hole_index+1}</div>
-                              <div style={{fontSize:16,fontWeight:800,color:T.white,marginTop:2}}>{sh.type==="nearest_pin"?"🎯 Nearest the Pin":sh.type==="longest_drive"?"🏌️ Longest Drive":sh.type}</div>
+                              <div style={{fontSize:16,fontWeight:800,color:T.white,marginTop:2}}>{sh.type==="nearest_pin"?"🎯 Nearest the Pin":sh.type==="longest_drive"?"🏌️ Longest Drive":"🏅 Hole Sponsor"}</div>
                               <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:2}}>Sponsored by {sh.sponsor_name||"TBC"}</div>
                             </div>
                             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
@@ -1066,7 +1066,7 @@ export default function AdminPortal() {
         <Modal title="Add Sponsored Hole" onClose={()=>setShowNewSponsor(false)} width={480}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <Sel label="Hole" value={newSponsor.hole_index} onChange={v=>setNewSponsor(p=>({...p,hole_index:v}))} options={Array.from({length:18},(_,i)=>({value:String(i),label:`Hole ${i+1}`}))}/>
-            <Sel label="Type" value={newSponsor.type} onChange={v=>setNewSponsor(p=>({...p,type:v}))} options={[{value:"nearest_pin",label:"🎯 Nearest the Pin"},{value:"longest_drive",label:"🏌️ Longest Drive"},{value:"custom",label:"Custom"}]}/>
+            <Sel label="Type" value={newSponsor.type} onChange={v=>setNewSponsor(p=>({...p,type:v}))} options={[{value:"nearest_pin",label:"🎯 Nearest the Pin"},{value:"longest_drive",label:"🏌️ Longest Drive"},{value:"hole_sponsor",label:"🏅 Hole Sponsor"}]}/>
           </div>
           <Inp label="Sponsor Name" value={newSponsor.sponsor_name} onChange={v=>setNewSponsor(p=>({...p,sponsor_name:v}))} placeholder="e.g. Acme Ltd"/>
           <ImgUpload label="Sponsor Logo" value={newSponsor.sponsor_logo} onChange={v=>setNewSponsor(p=>({...p,sponsor_logo:v}))}/>
