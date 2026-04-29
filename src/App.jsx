@@ -107,6 +107,53 @@ const ImgUpload = ({label, value, onChange}) => (
   </div>
 );
 
+// ─── EDIT PLAYER ROW ─────────────────────────────────────────────────────────
+function EditPlayerRow({player, T, onSave}) {
+  const [p, setP] = useState({name: player.name||"", handicap: String(player.handicap||""), company: player.company||"", email: player.email||""});
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    await onSave(p);
+    setSaved(true);
+    setTimeout(()=>setSaved(false), 2000);
+  };
+
+  return (
+    <div style={{background:`${T.navyMd}`,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 80px",gap:10,marginBottom:8}}>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:4}}>Name</label>
+          <input value={p.name} onChange={e=>setP(x=>({...x,name:e.target.value}))}
+            style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:4}}>HCP</label>
+          <input value={p.handicap} onChange={e=>setP(x=>({...x,handicap:e.target.value}))} type="number"
+            style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:4}}>Company</label>
+          <input value={p.company} onChange={e=>setP(x=>({...x,company:e.target.value}))}
+            style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:10,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:4}}>Email</label>
+          <input value={p.email} onChange={e=>setP(x=>({...x,email:e.target.value}))} type="email"
+            style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+        </div>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <button onClick={handleSave}
+          style={{padding:"6px 16px",borderRadius:8,border:"none",background:saved?T.green:T.blue,color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"background 0.2s"}}>
+          {saved ? "✓ Saved" : "Save Player"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── AUCTION TAB ─────────────────────────────────────────────────────────────
 function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, T}) {
   const [selectedItem, setSelectedItem] = useState(null);
@@ -1019,14 +1066,30 @@ export default function AdminPortal() {
       )}
 
       {editTeam&&(
-        <Modal title={`Edit Team — ${editTeam.name}`} onClose={()=>setEditTeam(null)} width={400}>
+        <Modal title={`Edit Team — ${editTeam.name}`} onClose={()=>setEditTeam(null)} width={560}>
           <Inp label="Team Name" value={editTeam.name} onChange={v=>setEditTeam(p=>({...p,name:v}))} required/>
           <Inp label="PIN (4 digits)" value={editTeam.pin||""} onChange={v=>setEditTeam(p=>({...p,pin:v.slice(0,4)}))} placeholder="e.g. 1234"/>
+
+          {/* Players */}
+          {players.filter(p=>p.team_id===editTeam.id).length > 0 && (
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Players</label>
+              {players.filter(p=>p.team_id===editTeam.id).map(player=>(
+                <EditPlayerRow key={player.id} player={player} T={T} onSave={async (updated)=>{
+                  try {
+                    await sb.patch("players", player.id, { name: updated.name, handicap: parseFloat(updated.handicap)||null, company: updated.company, email: updated.email });
+                    setPlayers(prev=>prev.map(p=>p.id===player.id?{...p,...updated}:p));
+                  } catch(e) { showToast(e.message,"error"); }
+                }}/>
+              ))}
+            </div>
+          )}
+
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
             <Btn onClick={()=>deleteTeam(editTeam.id)} variant="danger">🗑 Delete Team</Btn>
             <div style={{flex:1}}/>
             <Btn onClick={()=>setEditTeam(null)} variant="secondary">Cancel</Btn>
-            <Btn onClick={updateTeam}>Save Changes</Btn>
+            <Btn onClick={updateTeam}>Save Team</Btn>
           </div>
         </Modal>
       )}
