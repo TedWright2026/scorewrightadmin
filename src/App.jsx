@@ -21,13 +21,52 @@ const T = {
   textMd:"#94A3B8",textDk:"#64748B",border:"#1E3354",card:"#162440",input:"#0D1829",
 };
 
+// ─── FORMAT METADATA ─────────────────────────────────────────────────────────
+const FORMAT_LABEL = {
+  scramble: "Scramble",
+  stableford_b3of4: "Stableford – Best 3 of 4",
+  hole_points_race: "Hole Points Race",
+};
+const FORMAT_BADGE = {
+  scramble:        { bg: T.amberLt, col: "#78350f" },
+  stableford_b3of4:{ bg: "#dbeafe", col: "#1e3a8a" },
+  hole_points_race:{ bg: T.greenLt, col: "#14532d" },
+};
+const isSingleCourse = f => f === "scramble" || f === "stableford_b3of4";
+const teamSize = f => (f === "scramble" || f === "stableford_b3of4") ? 4 : 2;
+
+const formatPill = f => {
+  const b = FORMAT_BADGE[f] || { bg: T.navyLt, col: T.text };
+  return <span style={{background:b.bg,color:b.col,padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>{FORMAT_LABEL[f] || f}</span>;
+};
+
+// ─── HANDICAP & STABLEFORD HELPERS (Full WHS) ────────────────────────────────
+// Course Handicap = round( HCP Index × Slope/113 + (CR − Par) )
+// Playing Handicap = round( Course HCP × allowance )
+const courseHandicap = (idx, course) => {
+  const i = parseFloat(idx);
+  if (isNaN(i)) return 0;
+  if (!course || !course.slope || course.rating == null || course.par == null) return Math.round(i);
+  return Math.round(i * (course.slope / 113) + (parseFloat(course.rating) - parseInt(course.par)));
+};
+const playingHcp = (idx, course, allow) => Math.round(courseHandicap(idx, course) * allow);
+const strokesOn = (php, si) => php > 0 ? Math.floor(php / 18) + (si <= (php % 18) ? 1 : 0) : 0;
+const stbPts = (gross, par, strokes) => {
+  if (gross == null) return null;
+  const diff = (gross - strokes) - par;
+  if (diff <= -2) return 4;
+  if (diff === -1) return 3;
+  if (diff ===  0) return 2;
+  if (diff ===  1) return 1;
+  return 0;
+};
+
 const statusPill = s => {
   const m = { draft:["#78350f","#FEF3C7"], live:["#14532d","#DCFCE7"], finished:[T.textDk,"#1e293b"] };
   const [col, bg] = m[s] || [T.textDk,"#1e293b"];
   return <span style={{background:bg,color:col,padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700}}>{s.toUpperCase()}</span>;
 };
 
-// Image picker helper
 const imgToBase64 = file => new Promise((res, rej) => {
   const r = new FileReader();
   r.onload = e => res(e.target.result);
@@ -158,7 +197,6 @@ function EditPlayerRow({player, T, onSave}) {
 function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, T}) {
   const [selectedItem, setSelectedItem] = useState(null);
 
-  // Auto-select first item
   useEffect(() => {
     if (auctionItems.length > 0 && !selectedItem) setSelectedItem(auctionItems[0]);
   }, [auctionItems]);
@@ -178,8 +216,6 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
 
   return (
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,height:"calc(100vh - 280px)"}}>
-
-      {/* LEFT — item list */}
       <div style={{display:"flex",flexDirection:"column",gap:10,overflowY:"auto"}}>
         {auctionItems.map(item => {
           const bids = auctionBids.filter(b=>b.item_id===item.id);
@@ -210,10 +246,8 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
         })}
       </div>
 
-      {/* RIGHT — bid feed for selected item */}
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {selectedItem ? (<>
-          {/* Item header */}
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,background:T.navyMd}}>
             <div style={{fontWeight:800,fontSize:15}}>{selectedItem.title}</div>
             <div style={{fontSize:11,color:T.textMd,marginTop:2}}>{selectedItem.description}</div>
@@ -229,7 +263,6 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
             </div>
           </div>
 
-          {/* Bid summary */}
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",gap:20}}>
             <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Starting Bid</div><div style={{fontSize:18,fontWeight:900,color:T.textMd}}>€{selectedItem.start_bid}</div></div>
             <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Current Top</div><div style={{fontSize:18,fontWeight:900,color:top?T.green:T.textDk}}>€{top?top.amount:selectedItem.start_bid}</div></div>
@@ -237,7 +270,6 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
             {top&&<div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Winning Team</div><div style={{fontSize:14,fontWeight:800,color:T.amber}}>🏆 {top.team_name}</div></div>}
           </div>
 
-          {/* All bids — sorted highest to lowest */}
           <div style={{flex:1,overflowY:"auto"}}>
             {itemBids.length===0 ? (
               <div style={{padding:30,textAlign:"center",color:T.textDk,fontSize:13}}>No bids yet for this item</div>
@@ -264,6 +296,159 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
   );
 }
 
+// ─── STABLEFORD LIVE SCORES (3 leaderboards + methodology) ───────────────────
+function StablefordLiveScores({ selectedComp, teams, players, scores, courses, compCourses }) {
+  const linkedCourse = compCourses[0] ? courses.find(c => c.id === compCourses[0].course_id) : null;
+  const holes = (() => {
+    if (!linkedCourse?.holes) return [];
+    return Array.isArray(linkedCourse.holes) ? linkedCourse.holes : (() => { try { return JSON.parse(linkedCourse.holes); } catch { return []; } })();
+  })();
+
+  if (!linkedCourse || holes.length === 0) {
+    return <Card style={{padding:40,textAlign:"center",color:T.textMd}}>
+      <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
+      <div>No course set for this competition. Use “Change Course” above to attach one before scoring.</div>
+    </Card>;
+  }
+
+  // Per-player aggregate (used for Nett + Gross individual leaderboards)
+  const playerRows = players.map(p => {
+    const team = teams.find(t => t.id === p.team_id);
+    const idx  = parseFloat(p.handicap);
+    const cHcp = courseHandicap(idx, linkedCourse);
+    const phpTeams = playingHcp(idx, linkedCourse, 0.9);
+    const phpNett  = playingHcp(idx, linkedCourse, 1.0);
+
+    let pTeams = 0, pNett = 0, pGross = 0, holesPlayed = 0;
+    holes.forEach((h, hIdx) => {
+      const sc = scores.find(s => s.team_id === p.team_id && s.player_slot === p.slot && s.hole_index === hIdx);
+      if (sc && sc.gross_score != null) {
+        holesPlayed++;
+        pTeams += stbPts(sc.gross_score, h.par, strokesOn(phpTeams, h.si));
+        pNett  += stbPts(sc.gross_score, h.par, strokesOn(phpNett,  h.si));
+        pGross += stbPts(sc.gross_score, h.par, 0);
+      }
+    });
+    return { ...p, teamName: team?.name || "—", idx: isNaN(idx)?"–":idx, cHcp, phpTeams, phpNett, pTeams, pNett, pGross, holesPlayed };
+  });
+
+  // TEAMS — best 3 of 4 stableford points per hole at 90%
+  const teamRows = teams.map(team => {
+    const tp = players.filter(p => p.team_id === team.id);
+    let total = 0, holesScored = 0;
+    holes.forEach((h, hIdx) => {
+      const pts = tp.map(p => {
+        const sc = scores.find(s => s.team_id === team.id && s.player_slot === p.slot && s.hole_index === hIdx);
+        if (!sc || sc.gross_score == null) return null;
+        const php = playingHcp(parseFloat(p.handicap), linkedCourse, 0.9);
+        return stbPts(sc.gross_score, h.par, strokesOn(php, h.si));
+      }).filter(x => x !== null);
+      if (pts.length > 0) {
+        const top3 = [...pts].sort((a,b) => b-a).slice(0, 3);
+        total += top3.reduce((s,x) => s+x, 0);
+        holesScored++;
+      }
+    });
+    return { ...team, total, holesScored, playerCount: tp.length };
+  }).sort((a,b) => b.total - a.total);
+
+  const nettLb  = [...playerRows].filter(p => p.holesPlayed > 0).sort((a,b) => b.pNett  - a.pNett);
+  const grossLb = [...playerRows].filter(p => p.holesPlayed > 0).sort((a,b) => b.pGross - a.pGross);
+
+  const lbHeader = (icon, title, subtitle, bg) => (
+    <div style={{padding:"12px 16px",background:bg,color:T.white}}>
+      <div style={{fontWeight:800,fontSize:14}}>{icon} {title}</div>
+      <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:2}}>{subtitle}</div>
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* TEAMS */}
+      <Card>
+        {lbHeader("🏆", "TEAMS", "90% Course Handicap · best 3 of 4 stableford points per hole", T.blue)}
+        <table>
+          <thead><tr><th style={{width:60}}>Rank</th><th>Team</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:90}}>Players</th><th style={{textAlign:"center",width:100}}>Points</th></tr></thead>
+          <tbody>
+            {teamRows.length===0 ? <tr><td colSpan={5} style={{textAlign:"center",color:T.textDk,padding:30}}>No teams yet</td></tr> :
+              teamRows.map((t,i) => (
+                <tr key={t.id} style={{background:i===0?`${T.green}11`:"transparent"}}>
+                  <td style={{fontWeight:900,fontSize:i<3?16:14}}>{i+1}</td>
+                  <td style={{fontWeight:700}}>⚑ {t.name}</td>
+                  <td style={{textAlign:"center"}}>{t.holesScored}/18</td>
+                  <td style={{textAlign:"center",color:T.textMd}}>{t.playerCount}</td>
+                  <td style={{textAlign:"center",fontWeight:900,fontSize:18,color:T.green}}>{t.holesScored>0?t.total:"–"}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </Card>
+
+      {/* PLAYER NETT */}
+      <Card>
+        {lbHeader("👤", "Player Nett", "100% Course Handicap · individual stableford", T.navyMd)}
+        <table>
+          <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:60}}>Crs</th><th style={{textAlign:"center",width:70}}>Play</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
+          <tbody>
+            {nettLb.length===0 ? <tr><td colSpan={8} style={{textAlign:"center",color:T.textDk,padding:30}}>No scores yet</td></tr> :
+              nettLb.map((p,i) => (
+                <tr key={p.id} style={{background:i===0?`${T.green}11`:"transparent"}}>
+                  <td style={{fontWeight:900,fontSize:i<3?15:13}}>{i+1}</td>
+                  <td style={{fontWeight:700}}>{p.name}</td>
+                  <td style={{color:T.textMd,fontSize:12}}>{p.teamName}</td>
+                  <td style={{textAlign:"center",color:T.textMd}}>{p.idx}</td>
+                  <td style={{textAlign:"center",color:T.textMd}}>{p.cHcp}</td>
+                  <td style={{textAlign:"center",fontWeight:700}}>{p.phpNett}</td>
+                  <td style={{textAlign:"center"}}>{p.holesPlayed}/18</td>
+                  <td style={{textAlign:"center",fontWeight:900,fontSize:16,color:T.green}}>{p.pNett}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </Card>
+
+      {/* PLAYER GROSS */}
+      <Card>
+        {lbHeader("⛳", "Player Gross", "Scratch · no handicap strokes applied", T.navyMd)}
+        <table>
+          <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
+          <tbody>
+            {grossLb.length===0 ? <tr><td colSpan={6} style={{textAlign:"center",color:T.textDk,padding:30}}>No scores yet</td></tr> :
+              grossLb.map((p,i) => (
+                <tr key={p.id} style={{background:i===0?`${T.green}11`:"transparent"}}>
+                  <td style={{fontWeight:900,fontSize:i<3?15:13}}>{i+1}</td>
+                  <td style={{fontWeight:700}}>{p.name}</td>
+                  <td style={{color:T.textMd,fontSize:12}}>{p.teamName}</td>
+                  <td style={{textAlign:"center",color:T.textMd}}>{p.idx}</td>
+                  <td style={{textAlign:"center"}}>{p.holesPlayed}/18</td>
+                  <td style={{textAlign:"center",fontWeight:900,fontSize:16,color:T.green}}>{p.pGross}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </Card>
+
+      {/* METHODOLOGY */}
+      <Card style={{padding:"18px 22px"}}>
+        <div style={{fontWeight:800,fontSize:13,marginBottom:12,color:T.text,letterSpacing:0.3}}>📐 How handicaps & points are calculated</div>
+        <div style={{fontSize:12.5,color:T.text,lineHeight:1.75}}>
+          <div><strong style={{color:T.amber}}>Course Handicap</strong> &nbsp;=&nbsp; round(&nbsp;HCP&nbsp;Index&nbsp;×&nbsp;Slope&nbsp;÷&nbsp;113&nbsp;+&nbsp;(CR&nbsp;−&nbsp;Par)&nbsp;)</div>
+          <div><strong style={{color:T.amber}}>Playing Handicap</strong> &nbsp;=&nbsp; round(&nbsp;Course&nbsp;HCP&nbsp;×&nbsp;allowance&nbsp;)</div>
+          <div style={{marginTop:10,paddingLeft:14,color:T.textMd}}>•&nbsp;<strong style={{color:T.text}}>TEAMS</strong>: 90% allowance, best 3 of 4 stableford points per hole</div>
+          <div style={{paddingLeft:14,color:T.textMd}}>•&nbsp;<strong style={{color:T.text}}>Player Nett</strong>: 100% allowance, individual stableford</div>
+          <div style={{paddingLeft:14,color:T.textMd}}>•&nbsp;<strong style={{color:T.text}}>Player Gross</strong>: scratch, no strokes received</div>
+          <div style={{marginTop:10}}><strong style={{color:T.amber}}>Stableford points</strong>: Eagle+ = 4&nbsp;·&nbsp;Birdie = 3&nbsp;·&nbsp;Par = 2&nbsp;·&nbsp;Bogey = 1&nbsp;·&nbsp;Double Bogey or worse = 0</div>
+          <div style={{marginTop:10,fontSize:11.5,color:T.textDk}}>Course: <strong style={{color:T.textMd}}>{linkedCourse.name}</strong>&nbsp;·&nbsp;Slope&nbsp;{linkedCourse.slope}&nbsp;·&nbsp;CR&nbsp;{linkedCourse.rating}&nbsp;·&nbsp;Par&nbsp;{linkedCourse.par}</div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── SPLASH ──────────────────────────────────────────────────────────────────
 function Splash({onDone}) {
   const [phase, setPhase] = useState(0);
@@ -278,8 +463,6 @@ function Splash({onDone}) {
   return (
     <div style={{width:"100vw",height:"100vh",background:T.navy,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",overflow:"hidden",position:"relative"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Montserrat:wght@400;600;700&display=swap');`}</style>
-
-      {/* Corner brackets */}
       {[{top:40,left:40,borderTop:`2px solid rgba(255,255,255,0.2)`,borderLeft:`2px solid rgba(255,255,255,0.2)`},
         {top:40,right:40,borderTop:`2px solid rgba(255,255,255,0.2)`,borderRight:`2px solid rgba(255,255,255,0.2)`},
         {bottom:40,left:40,borderBottom:`2px solid rgba(255,255,255,0.2)`,borderLeft:`2px solid rgba(255,255,255,0.2)`},
@@ -287,33 +470,20 @@ function Splash({onDone}) {
       ].map((s,i)=>(
         <div key={i} style={{position:"absolute",width:60,height:60,opacity:phase>=1?1:0,transition:`opacity 0.8s ease ${i*0.08}s`,...s}}/>
       ))}
-
-      {/* Background glow */}
       <div style={{position:"absolute",inset:0,background:`radial-gradient(ellipse at 50% 50%, ${T.blue}22 0%, transparent 65%)`,pointerEvents:"none"}}/>
-
-      {/* Logo */}
       <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center"}}>
-        {/* Top label */}
         <div style={{opacity:phase>=1?0.5:0,transform:phase>=1?"translateY(0)":"translateY(10px)",transition:`opacity 0.7s ease, transform 0.7s ${ease}`,fontFamily:"'Montserrat',sans-serif",fontWeight:600,fontSize:13,letterSpacing:6,textTransform:"uppercase",color:T.white,marginBottom:28}}>
           Golf Competition Management
         </div>
-
-        {/* Main wordmark */}
         <div style={{display:"flex",alignItems:"baseline",lineHeight:1}}>
           <span style={{opacity:phase>=2?1:0,transform:phase>=2?"translateY(0)":"translateY(20px)",transition:`opacity 0.8s ${ease} 0.05s, transform 0.8s ${ease} 0.05s`,display:"inline-block",fontFamily:"'Playfair Display',serif",fontWeight:700,fontSize:120,color:T.white,letterSpacing:"-2px"}}>wRight</span>
           <span style={{width:16,display:"inline-block"}}/>
           <span style={{opacity:phase>=2?1:0,transform:phase>=2?"translateY(0)":"translateY(20px)",transition:`opacity 0.8s ${ease} 0.12s, transform 0.8s ${ease} 0.12s`,display:"inline-block",fontFamily:"'Playfair Display',serif",fontWeight:900,fontSize:120,color:T.red}}>Score</span>
         </div>
-
-        {/* Divider */}
         <div style={{width:phase>=3?"600px":"0",height:"2px",background:`linear-gradient(90deg, transparent, ${T.red}, transparent)`,margin:"28px 0 24px",transition:`width 0.8s ${ease}`}}/>
-
-        {/* Subtitle */}
         <div style={{opacity:phase>=3?0.6:0,transform:phase>=3?"translateY(0)":"translateY(10px)",transition:`opacity 0.7s ease, transform 0.7s ease`,fontFamily:"'Montserrat',sans-serif",fontWeight:600,fontSize:14,letterSpacing:8,textTransform:"uppercase",color:T.white}}>
           Admin Portal
         </div>
-
-        {/* Loading bar */}
         <div style={{marginTop:60,width:320,height:2,background:"rgba(255,255,255,0.1)",borderRadius:1,overflow:"hidden"}}>
           <div style={{height:"100%",background:T.red,borderRadius:1,width:phase>=4?"100%":"0%",transition:"width 0.9s ease"}}/>
         </div>
@@ -342,7 +512,6 @@ function Login({onLogin}) {
     <div style={{width:"100vw",height:"100vh",background:T.navy,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=Playfair+Display:wght@700;900&display=swap');`}</style>
       <div style={{background:T.navyMd,border:`1px solid ${T.border}`,borderRadius:20,padding:"48px 48px 40px",width:440,boxShadow:"0 32px 80px rgba(0,0,0,0.4)"}}>
-        {/* Logo */}
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:40,fontWeight:900,lineHeight:1}}>
             <span style={{color:T.text}}>wRight</span><span style={{color:T.red}}>Score</span>
@@ -366,7 +535,7 @@ function Login({onLogin}) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function AdminPortal() {
-  const [screen, setScreen] = useState("splash"); // splash | login | app
+  const [screen, setScreen] = useState("splash");
   const [nav, setNav] = useState("dashboard");
   const [competitions, setCompetitions] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -378,10 +547,9 @@ export default function AdminPortal() {
   const [auctionBids, setAuctionBids] = useState([]);
   const [scores, setScores] = useState([]);
   const [sponsoredHoles, setSponsoredHoles] = useState([]);
-  const [compCourses, setCompCourses] = useState([]); // courses linked to selected comp
+  const [compCourses, setCompCourses] = useState([]);
   const [toast, setToast] = useState(null);
 
-  // Modals
   const [showNewComp, setShowNewComp] = useState(false);
   const [showNewCourse, setShowNewCourse] = useState(false);
   const [editCourse, setEditCourse] = useState(null);
@@ -393,7 +561,6 @@ export default function AdminPortal() {
   const [showNewItem, setShowNewItem] = useState(false);
   const [showNewSponsor, setShowNewSponsor] = useState(false);
 
-  // Forms
   const [newComp, setNewComp] = useState({name:"",location:"",format:"scramble",notes:"",course_id:"",course_ids:["","","",""]});
   const [newCourse, setNewCourse] = useState({name:"",location:"",par:"70",rating:"69.0",slope:"120"});
   const [newTeam, setNewTeam] = useState({name:"",pin:""});
@@ -435,18 +602,15 @@ export default function AdminPortal() {
   const updateCompCourses = async () => {
     if (!selectedComp) return;
     try {
-      // Delete all existing course links for this competition
       const r = await fetch(`${SB_URL}/rest/v1/competition_courses?competition_id=eq.${selectedComp.id}`, { method:"DELETE", headers: sb.h });
       if (!r.ok) throw new Error(await r.text());
-      // Re-insert with new selections
-      if (selectedComp.format === "scramble") {
+      if (isSingleCourse(selectedComp.format)) {
         const cid = editCompCourseIds[0];
         if (cid) await sb.post("competition_courses", [{ competition_id: selectedComp.id, course_id: cid, day: 1 }]);
       } else {
         const links = editCompCourseIds.map((cid,i) => cid ? { competition_id: selectedComp.id, course_id: cid, day: i+1 } : null).filter(Boolean);
         if (links.length > 0) await sb.post("competition_courses", links);
       }
-      // Reload
       const cc = await sb.get("competition_courses", `select=*&competition_id=eq.${selectedComp.id}&order=day`);
       setCompCourses(cc);
       setShowEditCompCourses(false);
@@ -457,10 +621,13 @@ export default function AdminPortal() {
   const createComp = async () => {
     if(!newComp.name) return;
     try {
-      const payload = {name:newComp.name,location:newComp.location,format:newComp.format,notes:newComp.notes,admin_id:ADMIN_ID,status:"draft",handicap_allowance:newComp.format==="hole_points_race"?0.75:null};
+      // handicap_allowance is only meaningful for hole_points_race (single allowance).
+      // Stableford uses three allowances internally (90/100/0) so we leave this null.
+      const allowance = newComp.format === "hole_points_race" ? 0.75 : null;
+      const payload = {name:newComp.name,location:newComp.location,format:newComp.format,notes:newComp.notes,admin_id:ADMIN_ID,status:"draft",handicap_allowance:allowance};
       const res = await sb.post("competitions",[payload]);
       const comp = res[0];
-      if(newComp.format==="scramble"&&newComp.course_id)
+      if(isSingleCourse(newComp.format) && newComp.course_id)
         await sb.post("competition_courses",[{competition_id:comp.id,course_id:newComp.course_id,day:1}]);
       if(newComp.format==="hole_points_race"){
         const links = newComp.course_ids.map((cid,i)=>cid?{competition_id:comp.id,course_id:cid,day:i+1}:null).filter(Boolean);
@@ -507,7 +674,6 @@ export default function AdminPortal() {
   const updateCourse = async () => {
     if(!editCourse) return;
     try {
-      // Build updated holes array with edited par and si values
       const holes = editCourse.holes.map(h => ({
         h: h.h,
         par: parseInt(h.par) || 4,
@@ -531,7 +697,7 @@ export default function AdminPortal() {
   const createTeam = async () => {
     if(!newTeam.name||!selectedComp) return;
     try {
-      const maxP = selectedComp.format==="scramble"?4:2;
+      const maxP = teamSize(selectedComp.format);
       const res = await sb.post("teams",[{...newTeam,competition_id:selectedComp.id,max_players:maxP}]);
       setTeams(prev=>[...prev,res[0]]);
       setShowNewTeam(false); setNewTeam({name:"",pin:""});
@@ -617,7 +783,6 @@ export default function AdminPortal() {
   if(screen==="splash") return <Splash onDone={()=>setScreen("login")}/>;
   if(screen==="login") return <Login onLogin={()=>{ setScreen("app"); }}/>;
 
-  // ── MAIN APP ───────────────────────────────────────────────
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",background:T.navy,fontFamily:"'DM Sans',system-ui,sans-serif",color:T.text,overflow:"hidden"}}>
       <style>{`
@@ -632,7 +797,6 @@ export default function AdminPortal() {
         button{font-family:inherit;}
       `}</style>
 
-      {/* SIDEBAR */}
       <div style={{width:230,background:T.navyMd,borderRight:`1px solid ${T.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"22px 20px 18px",borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:900}}>
@@ -660,14 +824,12 @@ export default function AdminPortal() {
           )}
         </nav>
         <div style={{padding:"12px 20px",borderTop:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{fontSize:10,color:T.textDk}}>v1.0</div>
+          <div style={{fontSize:10,color:T.textDk}}>v1.1</div>
           <button onClick={()=>setScreen("login")} style={{background:"none",border:"none",color:T.textDk,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Sign Out</button>
         </div>
       </div>
 
-      {/* MAIN */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {/* Top bar */}
         <div style={{height:58,background:T.navyMd,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 28px",flexShrink:0}}>
           <div style={{fontSize:17,fontWeight:800}}>
             {selectedComp?(
@@ -689,11 +851,10 @@ export default function AdminPortal() {
             {selectedComp&&compTab==="teams"&&<Btn onClick={()=>setShowNewTeam(true)} small>+ Add Team</Btn>}
             {selectedComp&&compTab==="auction"&&<Btn onClick={()=>setShowNewItem(true)} small>+ Add Item</Btn>}
             {selectedComp&&compTab==="sponsors"&&<Btn onClick={()=>setShowNewSponsor(true)} small>+ Add Sponsor</Btn>}
-            <Btn onClick={loadBase} variant="secondary" small>↺</Btn>
+            <Btn onClick={()=>{ loadBase(); if(selectedComp) loadCompDetail(selectedComp.id); }} variant="secondary" small>↺</Btn>
           </div>
         </div>
 
-        {/* Content */}
         <div style={{flex:1,overflowY:"auto",padding:28}}>
 
           {/* DASHBOARD */}
@@ -717,7 +878,7 @@ export default function AdminPortal() {
                     {competitions.map(c=>(
                       <tr key={c.id} style={{cursor:"pointer"}} onClick={()=>{setSelectedComp(c);setCompTab("teams");setNav("competitions");}}>
                         <td style={{fontWeight:600}}>{c.name}</td>
-                        <td><span style={{background:c.format==="scramble"?T.amberLt:T.greenLt,color:c.format==="scramble"?"#78350f":"#14532d",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>{c.format==="scramble"?"Scramble":"Hole Points Race"}</span></td>
+                        <td>{formatPill(c.format)}</td>
                         <td>{statusPill(c.status)}</td>
                         <td onClick={e=>e.stopPropagation()}><Btn onClick={()=>{setSelectedComp(c);setCompTab("teams");setNav("competitions");}} small>Open →</Btn></td>
                       </tr>
@@ -776,7 +937,7 @@ export default function AdminPortal() {
                     }).map(c=>(
                       <tr key={c.id}>
                         <td style={{fontWeight:700}}>{c.name}</td>
-                        <td><span style={{background:c.format==="scramble"?T.amberLt:T.greenLt,color:c.format==="scramble"?"#78350f":"#14532d",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>{c.format==="scramble"?"Scramble":"Hole Points Race"}</span></td>
+                        <td>{formatPill(c.format)}</td>
                         <td style={{color:T.textMd}}>{c.location||"–"}</td>
                         <td>{statusPill(c.status)}</td>
                         <td><div style={{display:"flex",gap:6}}>
@@ -797,7 +958,7 @@ export default function AdminPortal() {
           {selectedComp&&(
             <div>
               <div style={{background:T.navyMd,borderRadius:12,padding:"14px 20px",marginBottom:20,display:"flex",gap:24,alignItems:"center",border:`1px solid ${T.border}`,flexWrap:"wrap"}}>
-                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Format</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.format==="scramble"?"Scramble":"Hole Points Race"}</div></div>
+                <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Format</div><div style={{fontWeight:700,marginTop:2}}>{FORMAT_LABEL[selectedComp.format] || selectedComp.format}</div></div>
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Location</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.location||"–"}</div></div>
                 <div>
                   <div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Course{compCourses.length!==1?"s":""}</div>
@@ -805,7 +966,7 @@ export default function AdminPortal() {
                     {compCourses.length===0 ? <span style={{color:T.red}}>⚠️ No course set</span> :
                       compCourses.map(cc=>{
                         const c = courses.find(x=>x.id===cc.course_id);
-                        return <div key={cc.id}>{selectedComp.format==="hole_points_race"?`Day ${cc.day}: `:""}{c?.name||"Unknown"}</div>;
+                        return <div key={cc.id}>{!isSingleCourse(selectedComp.format)?`Day ${cc.day}: `:""}{c?.name||"Unknown"}{c?` · Slope ${c.slope} · CR ${c.rating} · Par ${c.par}`:""}</div>;
                       })
                     }
                   </div>
@@ -818,7 +979,7 @@ export default function AdminPortal() {
                   compCourses.forEach(cc=>{ if(cc.day>=1&&cc.day<=4) ids[cc.day-1]=cc.course_id; });
                   setEditCompCourseIds(ids);
                   setShowEditCompCourses(true);
-                }} variant="secondary" small>✏️ Change Course{selectedComp.format==="hole_points_race"?"s":""}</Btn>
+                }} variant="secondary" small>✏️ Change Course{!isSingleCourse(selectedComp.format)?"s":""}</Btn>
               </div>
               <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:20}}>
                 <Tab label="Teams & Players" active={compTab==="teams"} onClick={()=>setCompTab("teams")} badge={teams.length||null}/>
@@ -847,7 +1008,7 @@ export default function AdminPortal() {
                               <div style={{fontWeight:800,fontSize:14,color:T.blue,textDecoration:"underline dotted"}}>⚑ {team.name}</div>
                               <div style={{fontSize:11,color:T.textMd,marginTop:3}}>
                                 PIN: <span style={{fontFamily:"monospace",fontWeight:700,color:T.amber,letterSpacing:2}}>{team.pin||"—"}</span>
-                                {allowance!=null&&allowance>0&&<span style={{marginLeft:8,color:T.textDk}}>· Allow -{allowance}</span>}
+                                {allowance!=null&&allowance>0&&<span style={{marginLeft:8,color:T.textDk}}>· Scramble allow -{allowance}</span>}
                               </div>
                             </div>
                             <Btn onClick={()=>setShowNewPlayer(team)} small>+ Player</Btn>
@@ -913,8 +1074,18 @@ export default function AdminPortal() {
                 />
               )}
 
-              {/* SCORES TAB */}
-              {compTab==="scores"&&(
+              {/* SCORES TAB — format-aware */}
+              {compTab==="scores" && selectedComp.format === "stableford_b3of4" && (
+                <StablefordLiveScores
+                  selectedComp={selectedComp}
+                  teams={teams}
+                  players={players}
+                  scores={scores}
+                  courses={courses}
+                  compCourses={compCourses}
+                />
+              )}
+              {compTab==="scores" && selectedComp.format !== "stableford_b3of4" && (
                 <Card>
                   <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontWeight:700}}>Live Scores — {selectedComp.name}</div>
                   <table>
@@ -953,12 +1124,16 @@ export default function AdminPortal() {
       {/* MODALS */}
       {showNewComp&&(
         <Modal title="Create New Competition" onClose={()=>setShowNewComp(false)}>
-          <Inp label="Competition Name" value={newComp.name} onChange={v=>setNewComp(p=>({...p,name:v}))} placeholder="e.g. Children's Charity Golf Classic 2026" required/>
-          <Inp label="Location" value={newComp.location} onChange={v=>setNewComp(p=>({...p,location:v}))} placeholder="e.g. Rathfarnham, Dublin"/>
-          <Sel label="Format" value={newComp.format} onChange={v=>setNewComp(p=>({...p,format:v}))} options={[{value:"scramble",label:"Scramble — one score per hole, team of 4"},{value:"hole_points_race",label:"Hole Points Race — wRyder Cup style"}]}/>
+          <Inp label="Competition Name" value={newComp.name} onChange={v=>setNewComp(p=>({...p,name:v}))} placeholder="e.g. Corporate Stableford 2026" required/>
+          <Inp label="Location" value={newComp.location} onChange={v=>setNewComp(p=>({...p,location:v}))} placeholder="e.g. Castle Golf Club, Dublin"/>
+          <Sel label="Format" value={newComp.format} onChange={v=>setNewComp(p=>({...p,format:v}))} options={[
+            {value:"scramble",         label:"Scramble — one ball, team of 4, drive tracker"},
+            {value:"stableford_b3of4", label:"Stableford – Best 3 of 4 — individual stableford, best 3 count per hole"},
+            {value:"hole_points_race", label:"Hole Points Race — wRyder Cup style"},
+          ]}/>
           <Inp label="Notes (optional)" value={newComp.notes} onChange={v=>setNewComp(p=>({...p,notes:v}))} placeholder="Any notes..."/>
-          {newComp.format==="scramble"&&(
-            <Sel label="Course" value={newComp.course_id} onChange={v=>setNewComp(p=>({...p,course_id:v}))} options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par})`}))]}/>
+          {isSingleCourse(newComp.format)&&(
+            <Sel label="Course" value={newComp.course_id} onChange={v=>setNewComp(p=>({...p,course_id:v}))} options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par} · Slope ${c.slope} · CR ${c.rating})`}))]}/>
           )}
           {newComp.format==="hole_points_race"&&(
             <div style={{marginBottom:14}}>
@@ -974,6 +1149,12 @@ export default function AdminPortal() {
               ))}
             </div>
           )}
+          {newComp.format==="stableford_b3of4"&&(
+            <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:11.5,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
+              ℹ️ <strong style={{color:T.text}}>Stableford – Best 3 of 4</strong>: each player plays their own ball. Team total per hole is the sum of the best 3 of 4 players' stableford points.<br/>
+              Three leaderboards run from the same scores: <strong>TEAMS</strong> (90% allowance), <strong>Player Nett</strong> (100%), <strong>Player Gross</strong> (scratch).
+            </div>
+          )}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn onClick={()=>setShowNewComp(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createComp} disabled={!newComp.name}>Create Competition</Btn>
@@ -987,10 +1168,12 @@ export default function AdminPortal() {
           <Inp label="Location" value={newCourse.location} onChange={v=>setNewCourse(p=>({...p,location:v}))} placeholder="e.g. Rathfarnham, Dublin"/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
             <Inp label="Par" value={newCourse.par} onChange={v=>setNewCourse(p=>({...p,par:v}))} type="number"/>
-            <Inp label="Rating" value={newCourse.rating} onChange={v=>setNewCourse(p=>({...p,rating:v}))}/>
+            <Inp label="Course Rating" value={newCourse.rating} onChange={v=>setNewCourse(p=>({...p,rating:v}))}/>
             <Inp label="Slope" value={newCourse.slope} onChange={v=>setNewCourse(p=>({...p,slope:v}))} type="number"/>
           </div>
-          <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:12,color:T.textMd,marginBottom:14}}>ℹ️ Holes created with default values (Par 4, SI 1–18). Edit in Supabase if needed.</div>
+          <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:12,color:T.textMd,marginBottom:14}}>
+            ℹ️ Holes created with default values (Par 4, SI 1–18). Edit them per-hole on the Edit screen — required for stableford to score correctly.
+          </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn onClick={()=>setShowNewCourse(false)} variant="secondary">Cancel</Btn>
             <Btn onClick={createCourse}>Add Course</Btn>
@@ -1006,23 +1189,20 @@ export default function AdminPortal() {
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
             <Inp label="Par" value={editCourse.par} onChange={v=>setEditCourse(p=>({...p,par:v}))} type="number"/>
-            <Inp label="Rating" value={editCourse.rating} onChange={v=>setEditCourse(p=>({...p,rating:v}))}/>
+            <Inp label="Course Rating" value={editCourse.rating} onChange={v=>setEditCourse(p=>({...p,rating:v}))}/>
             <Inp label="Slope" value={editCourse.slope} onChange={v=>setEditCourse(p=>({...p,slope:v}))} type="number"/>
           </div>
 
-          {/* Hole editor */}
           {editCourse.holes&&Array.isArray(editCourse.holes)&&(
             <div style={{marginBottom:16}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Hole Par & Stroke Index</label>
               <div style={{background:T.navyMd,borderRadius:10,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                {/* Header */}
                 <div style={{display:"grid",gridTemplateColumns:"40px repeat(18,1fr)",gap:0,background:T.navy,padding:"6px 10px"}}>
                   <div style={{fontSize:10,fontWeight:700,color:T.textMd,textAlign:"center"}}></div>
                   {editCourse.holes.map(h=>(
                     <div key={h.h} style={{fontSize:10,fontWeight:700,color:T.textMd,textAlign:"center"}}>{h.h}</div>
                   ))}
                 </div>
-                {/* Par row */}
                 <div style={{display:"grid",gridTemplateColumns:"40px repeat(18,1fr)",gap:0,padding:"6px 10px",borderTop:`1px solid ${T.border}`,alignItems:"center"}}>
                   <div style={{fontSize:10,fontWeight:700,color:T.textMd}}>PAR</div>
                   {editCourse.holes.map((h,i)=>(
@@ -1031,7 +1211,6 @@ export default function AdminPortal() {
                       style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${T.border}`,color:T.white,fontSize:12,fontWeight:700,textAlign:"center",outline:"none",padding:"2px 0",fontFamily:"inherit"}}/>
                   ))}
                 </div>
-                {/* SI row */}
                 <div style={{display:"grid",gridTemplateColumns:"40px repeat(18,1fr)",gap:0,padding:"6px 10px",borderTop:`1px solid ${T.border}`,alignItems:"center"}}>
                   <div style={{fontSize:10,fontWeight:700,color:T.textMd}}>SI</div>
                   {editCourse.holes.map((h,i)=>(
@@ -1070,7 +1249,6 @@ export default function AdminPortal() {
           <Inp label="Team Name" value={editTeam.name} onChange={v=>setEditTeam(p=>({...p,name:v}))} required/>
           <Inp label="PIN (4 digits)" value={editTeam.pin||""} onChange={v=>setEditTeam(p=>({...p,pin:v.slice(0,4)}))} placeholder="e.g. 1234"/>
 
-          {/* Players */}
           {players.filter(p=>p.team_id===editTeam.id).length > 0 && (
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Players</label>
@@ -1078,7 +1256,7 @@ export default function AdminPortal() {
                 <EditPlayerRow key={player.id} player={player} T={T} onSave={async (updated)=>{
                   try {
                     await sb.patch("players", player.id, { name: updated.name, handicap: parseFloat(updated.handicap)||null, company: updated.company, email: updated.email });
-                    setPlayers(prev=>prev.map(p=>p.id===player.id?{...p,...updated}:p));
+                    setPlayers(prev=>prev.map(p=>p.id===player.id?{...p,...updated,handicap:parseFloat(updated.handicap)||null}:p));
                   } catch(e) { showToast(e.message,"error"); }
                 }}/>
               ))}
@@ -1142,12 +1320,11 @@ export default function AdminPortal() {
         </Modal>
       )}
 
-      {/* Edit Competition Courses */}
       {showEditCompCourses&&selectedComp&&(
-        <Modal title={`Change Course${selectedComp.format==="hole_points_race"?"s":""} — ${selectedComp.name}`} onClose={()=>setShowEditCompCourses(false)} width={500}>
-          {selectedComp.format==="scramble"?(
+        <Modal title={`Change Course${!isSingleCourse(selectedComp.format)?"s":""} — ${selectedComp.name}`} onClose={()=>setShowEditCompCourses(false)} width={500}>
+          {isSingleCourse(selectedComp.format)?(
             <Sel label="Course" value={editCompCourseIds[0]} onChange={v=>{const ids=[...editCompCourseIds];ids[0]=v;setEditCompCourseIds(ids);}}
-              options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par})`}))]}/>
+              options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par} · Slope ${c.slope} · CR ${c.rating})`}))]}/>
           ):(
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Courses — one per day</label>
