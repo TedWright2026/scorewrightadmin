@@ -32,7 +32,10 @@ const FORMAT_BADGE = {
   stableford_b3of4:{ bg: "#dbeafe", col: "#1e3a8a" },
   hole_points_race:{ bg: T.greenLt, col: "#14532d" },
 };
-const isSingleCourse = f => f === "scramble" || f === "stableford_b3of4";
+const isSingleCourse = f => f === "scramble";
+// Stableford uses multi-course (one row per tee). Scramble = 1 course. hole_points_race = 1 per day.
+const isMultiTee  = f => f === "stableford_b3of4";
+const isMultiDay  = f => f === "hole_points_race";
 const teamSize = f => (f === "scramble" || f === "stableford_b3of4") ? 4 : 2;
 
 const formatPill = f => {
@@ -147,8 +150,14 @@ const ImgUpload = ({label, value, onChange}) => (
 );
 
 // ─── EDIT PLAYER ROW ─────────────────────────────────────────────────────────
-function EditPlayerRow({player, T, onSave}) {
-  const [p, setP] = useState({name: player.name||"", handicap: String(player.handicap||""), company: player.company||"", email: player.email||""});
+function EditPlayerRow({player, T, onSave, compCourses, courses, isStableford}) {
+  const [p, setP] = useState({
+    name: player.name||"",
+    handicap: String(player.handicap||""),
+    company: player.company||"",
+    email: player.email||"",
+    course_id: player.course_id||"",
+  });
   const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
@@ -156,6 +165,11 @@ function EditPlayerRow({player, T, onSave}) {
     setSaved(true);
     setTimeout(()=>setSaved(false), 2000);
   };
+
+  // Resolve current tee for the badge (label inside parens if present)
+  const currentCourse = (compCourses||[]).find(cc => cc.course_id === p.course_id);
+  const currentCourseObj = currentCourse ? (courses||[]).find(c => c.id === currentCourse.course_id) : null;
+  const teeLabel = currentCourseObj ? (currentCourseObj.name.match(/\(([^)]+)\)/)?.[1] || currentCourseObj.name) : null;
 
   return (
     <div style={{background:`${T.navyMd}`,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
@@ -183,6 +197,22 @@ function EditPlayerRow({player, T, onSave}) {
             style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}/>
         </div>
       </div>
+      {isStableford && (
+        <div style={{marginBottom:10}}>
+          <label style={{fontSize:10,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:4}}>
+            Tee {teeLabel && <span style={{padding:"1px 6px",background:T.blue,color:T.white,borderRadius:6,fontSize:9,marginLeft:6,letterSpacing:0.3,textTransform:"none"}}>{teeLabel}</span>}
+          </label>
+          <select value={p.course_id} onChange={e=>setP(x=>({...x,course_id:e.target.value}))}
+            style={{width:"100%",background:T.input,border:`1px solid ${T.border}`,borderRadius:6,padding:"7px 10px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+            <option value="">— Use first attached tee —</option>
+            {(compCourses||[]).map(cc => {
+              const c = (courses||[]).find(x => x.id === cc.course_id);
+              if (!c) return null;
+              return <option key={cc.id} value={c.id}>{c.name} (Par {c.par} · CR {c.rating} · Slope {c.slope})</option>;
+            })}
+          </select>
+        </div>
+      )}
       <div style={{display:"flex",justifyContent:"flex-end"}}>
         <button onClick={handleSave}
           style={{padding:"6px 16px",borderRadius:8,border:"none",background:saved?T.green:T.blue,color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"background 0.2s"}}>
@@ -298,29 +328,37 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
 
 // ─── STABLEFORD LIVE SCORES (3 leaderboards + methodology) ───────────────────
 function StablefordLiveScores({ selectedComp, teams, players, scores, courses, compCourses }) {
-  const linkedCourse = compCourses[0] ? courses.find(c => c.id === compCourses[0].course_id) : null;
-  const holes = (() => {
-    if (!linkedCourse?.holes) return [];
-    return Array.isArray(linkedCourse.holes) ? linkedCourse.holes : (() => { try { return JSON.parse(linkedCourse.holes); } catch { return []; } })();
-  })();
+  // Build a map of course_id → resolved course object (with parsed holes array)
+  const resolveCourse = (courseId) => {
+    const c = courses.find(x => x.id === courseId);
+    if (!c) return null;
+    const holes = Array.isArray(c.holes) ? c.holes : (() => {
+      try { return JSON.parse(c.holes); } catch { return []; }
+    })();
+    return { ...c, holes };
+  };
 
-  if (!linkedCourse || holes.length === 0) {
+  // Default course = first attached tee (used for players with no course_id assigned)
+  const defaultCourse = compCourses[0] ? resolveCourse(compCourses[0].course_id) : null;
+
+  if (!defaultCourse || defaultCourse.holes.length === 0) {
     return <Card style={{padding:40,textAlign:"center",color:T.textMd}}>
       <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
-      <div>No course set for this competition. Use “Change Course” above to attach one before scoring.</div>
+      <div>No tees attached to this competition. Use "Change Tees" above to attach the tees in play before scoring.</div>
     </Card>;
   }
 
-  // Per-player aggregate (used for Nett + Gross individual leaderboards)
+  // Per-player aggregate — each player computed against THEIR own tee
   const playerRows = players.map(p => {
     const team = teams.find(t => t.id === p.team_id);
     const idx  = parseFloat(p.handicap);
-    const cHcp = courseHandicap(idx, linkedCourse);
-    const phpTeams = playingHcp(idx, linkedCourse, 0.9);
-    const phpNett  = playingHcp(idx, linkedCourse, 1.0);
+    const pCourse = (p.course_id && resolveCourse(p.course_id)) || defaultCourse;
+    const cHcp = courseHandicap(idx, pCourse);
+    const phpTeams = playingHcp(idx, pCourse, 0.9);
+    const phpNett  = playingHcp(idx, pCourse, 1.0);
 
     let pTeams = 0, pNett = 0, pGross = 0, holesPlayed = 0;
-    holes.forEach((h, hIdx) => {
+    pCourse.holes.forEach((h, hIdx) => {
       const sc = scores.find(s => s.team_id === p.team_id && s.player_slot === p.slot && s.hole_index === hIdx);
       if (sc && sc.gross_score != null) {
         holesPlayed++;
@@ -329,26 +367,36 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
         pGross += stbPts(sc.gross_score, h.par, 0);
       }
     });
-    return { ...p, teamName: team?.name || "—", idx: isNaN(idx)?"–":idx, cHcp, phpTeams, phpNett, pTeams, pNett, pGross, holesPlayed };
+    const teeLabel = pCourse.name.match(/\(([^)]+)\)/)?.[1] || pCourse.name;
+    return { ...p, teamName: team?.name || "—", idx: isNaN(idx)?"–":idx, cHcp, phpTeams, phpNett, pTeams, pNett, pGross, holesPlayed, teeLabel, courseName: pCourse.name };
   });
 
-  // TEAMS — best 3 of 4 stableford points per hole at 90%
+  // TEAMS — best 3 of 4 per hole at 90%, each player vs their own tee
   const teamRows = teams.map(team => {
     const tp = players.filter(p => p.team_id === team.id);
+    // Pre-resolve each player's course
+    const tpEnriched = tp.map(p => ({
+      ...p,
+      course: (p.course_id && resolveCourse(p.course_id)) || defaultCourse,
+      php: playingHcp(parseFloat(p.handicap), (p.course_id && resolveCourse(p.course_id)) || defaultCourse, 0.9),
+    }));
+
     let total = 0, holesScored = 0;
-    holes.forEach((h, hIdx) => {
-      const pts = tp.map(p => {
+    // Iterate by hole index 0..17 (every course is 18 holes)
+    for (let hIdx = 0; hIdx < 18; hIdx++) {
+      const pts = tpEnriched.map(p => {
         const sc = scores.find(s => s.team_id === team.id && s.player_slot === p.slot && s.hole_index === hIdx);
         if (!sc || sc.gross_score == null) return null;
-        const php = playingHcp(parseFloat(p.handicap), linkedCourse, 0.9);
-        return stbPts(sc.gross_score, h.par, strokesOn(php, h.si));
+        const h = p.course?.holes?.[hIdx];
+        if (!h) return null;
+        return stbPts(sc.gross_score, h.par, strokesOn(p.php, h.si));
       }).filter(x => x !== null);
       if (pts.length > 0) {
         const top3 = [...pts].sort((a,b) => b-a).slice(0, 3);
         total += top3.reduce((s,x) => s+x, 0);
         holesScored++;
       }
-    });
+    }
     return { ...team, total, holesScored, playerCount: tp.length };
   }).sort((a,b) => b.total - a.total);
 
@@ -390,14 +438,15 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
       <Card>
         {lbHeader("👤", "Player Nett", "100% Course Handicap · individual stableford", T.navyMd)}
         <table>
-          <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:60}}>Crs</th><th style={{textAlign:"center",width:70}}>Play</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
+          <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{width:90}}>Tee</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:60}}>Crs</th><th style={{textAlign:"center",width:70}}>Play</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
           <tbody>
-            {nettLb.length===0 ? <tr><td colSpan={8} style={{textAlign:"center",color:T.textDk,padding:30}}>No scores yet</td></tr> :
+            {nettLb.length===0 ? <tr><td colSpan={9} style={{textAlign:"center",color:T.textDk,padding:30}}>No scores yet</td></tr> :
               nettLb.map((p,i) => (
                 <tr key={p.id} style={{background:i===0?`${T.green}11`:"transparent"}}>
                   <td style={{fontWeight:900,fontSize:i<3?15:13}}>{i+1}</td>
                   <td style={{fontWeight:700}}>{p.name}</td>
                   <td style={{color:T.textMd,fontSize:12}}>{p.teamName}</td>
+                  <td><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:6,background:T.blue,color:T.white}}>{p.teeLabel}</span></td>
                   <td style={{textAlign:"center",color:T.textMd}}>{p.idx}</td>
                   <td style={{textAlign:"center",color:T.textMd}}>{p.cHcp}</td>
                   <td style={{textAlign:"center",fontWeight:700}}>{p.phpNett}</td>
@@ -414,14 +463,15 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
       <Card>
         {lbHeader("⛳", "Player Gross", "Scratch · no handicap strokes applied", T.navyMd)}
         <table>
-          <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
+          <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{width:90}}>Tee</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
           <tbody>
-            {grossLb.length===0 ? <tr><td colSpan={6} style={{textAlign:"center",color:T.textDk,padding:30}}>No scores yet</td></tr> :
+            {grossLb.length===0 ? <tr><td colSpan={7} style={{textAlign:"center",color:T.textDk,padding:30}}>No scores yet</td></tr> :
               grossLb.map((p,i) => (
                 <tr key={p.id} style={{background:i===0?`${T.green}11`:"transparent"}}>
                   <td style={{fontWeight:900,fontSize:i<3?15:13}}>{i+1}</td>
                   <td style={{fontWeight:700}}>{p.name}</td>
                   <td style={{color:T.textMd,fontSize:12}}>{p.teamName}</td>
+                  <td><span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:6,background:T.blue,color:T.white}}>{p.teeLabel}</span></td>
                   <td style={{textAlign:"center",color:T.textMd}}>{p.idx}</td>
                   <td style={{textAlign:"center"}}>{p.holesPlayed}/18</td>
                   <td style={{textAlign:"center",fontWeight:900,fontSize:16,color:T.green}}>{p.pGross}</td>
@@ -442,7 +492,17 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
           <div style={{paddingLeft:14,color:T.textMd}}>•&nbsp;<strong style={{color:T.text}}>Player Nett</strong>: 100% allowance, individual stableford</div>
           <div style={{paddingLeft:14,color:T.textMd}}>•&nbsp;<strong style={{color:T.text}}>Player Gross</strong>: scratch, no strokes received</div>
           <div style={{marginTop:10}}><strong style={{color:T.amber}}>Stableford points</strong>: Eagle+ = 4&nbsp;·&nbsp;Birdie = 3&nbsp;·&nbsp;Par = 2&nbsp;·&nbsp;Bogey = 1&nbsp;·&nbsp;Double Bogey or worse = 0</div>
-          <div style={{marginTop:10,fontSize:11.5,color:T.textDk}}>Course: <strong style={{color:T.textMd}}>{linkedCourse.name}</strong>&nbsp;·&nbsp;Slope&nbsp;{linkedCourse.slope}&nbsp;·&nbsp;CR&nbsp;{linkedCourse.rating}&nbsp;·&nbsp;Par&nbsp;{linkedCourse.par}</div>
+          <div style={{marginTop:12,padding:"10px 12px",background:T.navyMd,borderRadius:8,fontSize:12,color:T.text,lineHeight:1.6}}>
+            <strong style={{color:T.amber}}>Mixed tees:</strong> each player's calculations use their own assigned tee — par, rating, slope and SI can differ between Men's/Women's tees and even between colours. Team total is best 3 of 4 contributors per hole regardless.
+          </div>
+          <div style={{marginTop:10,fontSize:11.5,color:T.textDk}}>
+            <div style={{fontWeight:700,marginBottom:4}}>Tees in play:</div>
+            {compCourses.map(cc => {
+              const c = courses.find(x => x.id === cc.course_id);
+              if (!c) return null;
+              return <div key={cc.id} style={{paddingLeft:10}}>•&nbsp;<strong style={{color:T.textMd}}>{c.name}</strong>&nbsp;·&nbsp;Par&nbsp;{c.par}&nbsp;·&nbsp;CR&nbsp;{c.rating}&nbsp;·&nbsp;Slope&nbsp;{c.slope}</div>;
+            })}
+          </div>
         </div>
       </Card>
     </div>
@@ -561,10 +621,10 @@ export default function AdminPortal() {
   const [showNewItem, setShowNewItem] = useState(false);
   const [showNewSponsor, setShowNewSponsor] = useState(false);
 
-  const [newComp, setNewComp] = useState({name:"",location:"",format:"scramble",notes:"",course_id:"",course_ids:["","","",""]});
+  const [newComp, setNewComp] = useState({name:"",location:"",format:"scramble",notes:"",course_id:"",course_ids:["","","","","","","",""]});
   const [newCourse, setNewCourse] = useState({name:"",location:"",par:"70",rating:"69.0",slope:"120"});
   const [newTeam, setNewTeam] = useState({name:"",pin:""});
-  const [newPlayer, setNewPlayer] = useState({name:"",handicap:"",company:"",email:""});
+  const [newPlayer, setNewPlayer] = useState({name:"",handicap:"",company:"",email:"",course_id:""});
   const [newItem, setNewItem] = useState({title:"",description:"",image:null,start_bid:"",closes_at:"17:30"});
   const [newSponsor, setNewSponsor] = useState({hole_index:"2",type:"nearest_pin",sponsor_name:"",sponsor_color:"#2563eb",sponsor_logo:null,prize_desc:""});
 
@@ -629,8 +689,8 @@ export default function AdminPortal() {
       const comp = res[0];
       if(isSingleCourse(newComp.format) && newComp.course_id)
         await sb.post("competition_courses",[{competition_id:comp.id,course_id:newComp.course_id,day:1}]);
-      if(newComp.format==="hole_points_race"){
-        const links = newComp.course_ids.map((cid,i)=>cid?{competition_id:comp.id,course_id:cid,day:i+1}:null).filter(Boolean);
+      if(newComp.format==="hole_points_race" || newComp.format==="stableford_b3of4"){
+        const links = (newComp.course_ids||[]).map((cid,i)=>cid?{competition_id:comp.id,course_id:cid,day:i+1}:null).filter(Boolean);
         if(links.length>0) await sb.post("competition_courses",links);
       }
       setCompetitions(prev=>[comp,...prev]);
@@ -728,9 +788,18 @@ export default function AdminPortal() {
     if(!newPlayer.name) return;
     try {
       const slot = players.filter(p=>p.team_id===teamId).length;
-      const res = await sb.post("players",[{...newPlayer,competition_id:selectedComp.id,team_id:teamId,admin_id:ADMIN_ID,handicap:parseFloat(newPlayer.handicap)||null,slot}]);
+      const payload = {
+        ...newPlayer,
+        competition_id: selectedComp.id,
+        team_id: teamId,
+        admin_id: ADMIN_ID,
+        handicap: parseFloat(newPlayer.handicap) || null,
+        course_id: newPlayer.course_id || null,
+        slot,
+      };
+      const res = await sb.post("players",[payload]);
       setPlayers(prev=>[...prev,res[0]]);
-      setShowNewPlayer(null); setNewPlayer({name:"",handicap:"",company:"",email:""});
+      setShowNewPlayer(null); setNewPlayer({name:"",handicap:"",company:"",email:"",course_id:""});
       showToast("Player added!");
     } catch(e) { showToast(e.message,"error"); }
   };
@@ -961,12 +1030,13 @@ export default function AdminPortal() {
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Format</div><div style={{fontWeight:700,marginTop:2}}>{FORMAT_LABEL[selectedComp.format] || selectedComp.format}</div></div>
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Location</div><div style={{fontWeight:700,marginTop:2}}>{selectedComp.location||"–"}</div></div>
                 <div>
-                  <div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Course{compCourses.length!==1?"s":""}</div>
+                  <div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>{isMultiTee(selectedComp.format)?"Tees":(compCourses.length!==1?"Courses":"Course")}</div>
                   <div style={{fontWeight:700,marginTop:2,fontSize:13}}>
-                    {compCourses.length===0 ? <span style={{color:T.red}}>⚠️ No course set</span> :
+                    {compCourses.length===0 ? <span style={{color:T.red}}>⚠️ No {isMultiTee(selectedComp.format)?"tee":"course"} set</span> :
                       compCourses.map(cc=>{
                         const c = courses.find(x=>x.id===cc.course_id);
-                        return <div key={cc.id}>{!isSingleCourse(selectedComp.format)?`Day ${cc.day}: `:""}{c?.name||"Unknown"}{c?` · Slope ${c.slope} · CR ${c.rating} · Par ${c.par}`:""}</div>;
+                        const prefix = isMultiTee(selectedComp.format) ? `Tee ${cc.day}: ` : isMultiDay(selectedComp.format) ? `Day ${cc.day}: ` : "";
+                        return <div key={cc.id}>{prefix}{c?.name||"Unknown"}{c?` · Slope ${c.slope} · CR ${c.rating} · Par ${c.par}`:""}</div>;
                       })
                     }
                   </div>
@@ -975,11 +1045,14 @@ export default function AdminPortal() {
                 <div><div style={{fontSize:10,color:T.textDk,textTransform:"uppercase",letterSpacing:1}}>Players</div><div style={{fontWeight:700,marginTop:2}}>{players.length}</div></div>
                 {selectedComp.notes&&<div style={{flex:1,fontSize:12,color:T.textMd,fontStyle:"italic"}}>{selectedComp.notes}</div>}
                 <Btn onClick={()=>{
-                  const ids = ["","","",""];
-                  compCourses.forEach(cc=>{ if(cc.day>=1&&cc.day<=4) ids[cc.day-1]=cc.course_id; });
+                  const slots = isMultiTee(selectedComp.format) ? 8 : isMultiDay(selectedComp.format) ? 4 : 1;
+                  const ids = Array(slots).fill("");
+                  compCourses.forEach(cc=>{ if(cc.day>=1&&cc.day<=slots) ids[cc.day-1]=cc.course_id; });
                   setEditCompCourseIds(ids);
                   setShowEditCompCourses(true);
-                }} variant="secondary" small>✏️ Change Course{!isSingleCourse(selectedComp.format)?"s":""}</Btn>
+                }} variant="secondary" small>
+                  ✏️ Change {isMultiTee(selectedComp.format)?"Tees":isMultiDay(selectedComp.format)?"Courses":"Course"}
+                </Btn>
               </div>
               <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:20}}>
                 <Tab label="Teams & Players" active={compTab==="teams"} onClick={()=>setCompTab("teams")} badge={teams.length||null}/>
@@ -1014,15 +1087,24 @@ export default function AdminPortal() {
                             <Btn onClick={()=>setShowNewPlayer(team)} small>+ Player</Btn>
                           </div>
                           {tp.length===0&&<div style={{padding:"14px 16px",color:T.textDk,fontSize:12}}>No players yet</div>}
-                          {tp.map((p,i)=>(
-                            <div key={p.id} style={{padding:"9px 16px",borderBottom:i<tp.length-1?`1px solid ${T.border}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                              <div>
-                                <div style={{fontWeight:600,fontSize:13}}>{p.name}</div>
-                                <div style={{fontSize:11,color:T.textMd}}>HCP {p.handicap??"–"}{p.company?` · ${p.company}`:""}</div>
+                          {tp.map((p,i)=>{
+                            const pCourseObj = p.course_id ? courses.find(c => c.id === p.course_id) : null;
+                            const teeLabel = pCourseObj ? (pCourseObj.name.match(/\(([^)]+)\)/)?.[1] || pCourseObj.name) : null;
+                            const needsTee = isMultiTee(selectedComp.format) && !p.course_id;
+                            return (
+                              <div key={p.id} style={{padding:"9px 16px",borderBottom:i<tp.length-1?`1px solid ${T.border}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                                <div>
+                                  <div style={{fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                    <span>{p.name}</span>
+                                    {teeLabel && <span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:6,background:T.blue,color:T.white,letterSpacing:0.3}}>{teeLabel}</span>}
+                                    {needsTee && <span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:6,background:T.amber,color:T.white,letterSpacing:0.3}}>NO TEE</span>}
+                                  </div>
+                                  <div style={{fontSize:11,color:T.textMd}}>HCP {p.handicap??"–"}{p.company?` · ${p.company}`:""}</div>
+                                </div>
+                                <button onClick={()=>deletePlayer(p.id)} style={{background:"none",border:"none",color:T.textDk,cursor:"pointer",fontSize:14}}>✕</button>
                               </div>
-                              <button onClick={()=>deletePlayer(p.id)} style={{background:"none",border:"none",color:T.textDk,cursor:"pointer",fontSize:14}}>✕</button>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </Card>
                       );
                     })}
@@ -1150,10 +1232,30 @@ export default function AdminPortal() {
             </div>
           )}
           {newComp.format==="stableford_b3of4"&&(
-            <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:11.5,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
-              ℹ️ <strong style={{color:T.text}}>Stableford – Best 3 of 4</strong>: each player plays their own ball. Team total per hole is the sum of the best 3 of 4 players' stableford points.<br/>
-              Three leaderboards run from the same scores: <strong>TEAMS</strong> (90% allowance), <strong>Player Nett</strong> (100%), <strong>Player Gross</strong> (scratch).
-            </div>
+            <>
+              <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:11.5,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
+                ℹ️ <strong style={{color:T.text}}>Stableford – Best 3 of 4</strong>: each player plays their own ball. Team total per hole is the sum of the best 3 of 4 players' stableford points.<br/>
+                Three leaderboards run from the same scores: <strong>TEAMS</strong> (90% allowance), <strong>Player Nett</strong> (100%), <strong>Player Gross</strong> (scratch).
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Tees in play — assign each player to one</label>
+                {[0,1,2,3,4,5,6,7].map(idx=>(
+                  <div key={idx} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textMd,width:48,flexShrink:0}}>Tee {idx+1}</div>
+                    <select
+                      value={newComp.course_ids?.[idx]||""}
+                      onChange={e=>{const ids=[...(newComp.course_ids||[])];while(ids.length<8)ids.push("");ids[idx]=e.target.value;setNewComp(p=>({...p,course_ids:ids}));}}
+                      style={{flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                      <option value="">— Optional —</option>
+                      {courses.map(c=><option key={c.id} value={c.id}>{c.name} (Par {c.par} · CR {c.rating} · Slope {c.slope})</option>)}
+                    </select>
+                  </div>
+                ))}
+                <div style={{fontSize:11,color:T.textDk,marginTop:4,fontStyle:"italic"}}>
+                  Add the tees that any player will use — Men's and Women's variants if mixed-gender. Each player will be assigned to one of these when added.
+                </div>
+              </div>
+            </>
           )}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn onClick={()=>setShowNewComp(false)} variant="secondary">Cancel</Btn>
@@ -1253,12 +1355,27 @@ export default function AdminPortal() {
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Players</label>
               {players.filter(p=>p.team_id===editTeam.id).map(player=>(
-                <EditPlayerRow key={player.id} player={player} T={T} onSave={async (updated)=>{
-                  try {
-                    await sb.patch("players", player.id, { name: updated.name, handicap: parseFloat(updated.handicap)||null, company: updated.company, email: updated.email });
-                    setPlayers(prev=>prev.map(p=>p.id===player.id?{...p,...updated,handicap:parseFloat(updated.handicap)||null}:p));
-                  } catch(e) { showToast(e.message,"error"); }
-                }}/>
+                <EditPlayerRow
+                  key={player.id}
+                  player={player}
+                  T={T}
+                  compCourses={compCourses}
+                  courses={courses}
+                  isStableford={isMultiTee(selectedComp?.format)}
+                  onSave={async (updated)=>{
+                    try {
+                      const patch = {
+                        name: updated.name,
+                        handicap: parseFloat(updated.handicap)||null,
+                        company: updated.company,
+                        email: updated.email,
+                        course_id: updated.course_id || null,
+                      };
+                      await sb.patch("players", player.id, patch);
+                      setPlayers(prev=>prev.map(p=>p.id===player.id?{...p,...patch}:p));
+                    } catch(e) { showToast(e.message,"error"); }
+                  }}
+                />
               ))}
             </div>
           )}
@@ -1280,6 +1397,32 @@ export default function AdminPortal() {
             <Inp label="Company" value={newPlayer.company} onChange={v=>setNewPlayer(p=>({...p,company:v}))} placeholder="e.g. WTech"/>
           </div>
           <Inp label="Email (optional)" value={newPlayer.email} onChange={v=>setNewPlayer(p=>({...p,email:v}))} type="email"/>
+          {isMultiTee(selectedComp?.format) && (
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block", fontSize:12, fontWeight:700, color:T.textMd, marginBottom:6, letterSpacing:0.3}}>
+                TEE / COURSE
+              </label>
+              <select
+                value={newPlayer.course_id}
+                onChange={e=>setNewPlayer(p=>({...p,course_id:e.target.value}))}
+                style={{width:"100%", padding:"10px 12px", background:T.input, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, fontSize:14, fontFamily:"inherit", outline:"none"}}>
+                <option value="">— Select tee —</option>
+                {compCourses.map(cc => {
+                  const c = courses.find(x => x.id === cc.course_id);
+                  if (!c) return null;
+                  return <option key={cc.id} value={c.id}>{c.name} (Par {c.par} · CR {c.rating} · Slope {c.slope})</option>;
+                })}
+              </select>
+              <div style={{fontSize:11, color:T.textDk, marginTop:6}}>
+                Pick which tee this player will use. If not selected, falls back to the first attached tee.
+              </div>
+              {compCourses.length === 0 && (
+                <div style={{fontSize:11, color:"#fb923c", marginTop:6}}>
+                  ⚠️ No tees attached to this competition yet. Add courses via "Change Courses" first.
+                </div>
+              )}
+            </div>
+          )}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn onClick={()=>setShowNewPlayer(null)} variant="secondary">Cancel</Btn>
             <Btn onClick={()=>createPlayer(showNewPlayer.id)}>Add Player</Btn>
@@ -1321,23 +1464,32 @@ export default function AdminPortal() {
       )}
 
       {showEditCompCourses&&selectedComp&&(
-        <Modal title={`Change Course${!isSingleCourse(selectedComp.format)?"s":""} — ${selectedComp.name}`} onClose={()=>setShowEditCompCourses(false)} width={500}>
+        <Modal title={`Change ${isMultiTee(selectedComp.format)?"Tees":isMultiDay(selectedComp.format)?"Courses":"Course"} — ${selectedComp.name}`} onClose={()=>setShowEditCompCourses(false)} width={500}>
           {isSingleCourse(selectedComp.format)?(
             <Sel label="Course" value={editCompCourseIds[0]} onChange={v=>{const ids=[...editCompCourseIds];ids[0]=v;setEditCompCourseIds(ids);}}
               options={[{value:"",label:"— Select course —"},...courses.map(c=>({value:c.id,label:`${c.name} (Par ${c.par} · Slope ${c.slope} · CR ${c.rating})`}))]}/>
           ):(
             <div style={{marginBottom:14}}>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Courses — one per day</label>
-              {[0,1,2,3].map(day=>(
-                <div key={day} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                  <div style={{fontSize:11,fontWeight:700,color:T.textMd,width:48,flexShrink:0}}>Day {day+1}</div>
-                  <select value={editCompCourseIds[day]||""} onChange={e=>{const ids=[...editCompCourseIds];ids[day]=e.target.value;setEditCompCourseIds(ids);}}
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+                {isMultiTee(selectedComp.format) ? "Tees in play" : "Courses — one per day"}
+              </label>
+              {Array.from({length: isMultiTee(selectedComp.format) ? 8 : 4}).map((_,idx)=>(
+                <div key={idx} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:T.textMd,width:56,flexShrink:0}}>
+                    {isMultiTee(selectedComp.format) ? `Tee ${idx+1}` : `Day ${idx+1}`}
+                  </div>
+                  <select value={editCompCourseIds[idx]||""} onChange={e=>{const ids=[...editCompCourseIds];while(ids.length<=idx)ids.push("");ids[idx]=e.target.value;setEditCompCourseIds(ids);}}
                     style={{flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}>
                     <option value="">— Optional —</option>
                     {courses.map(c=><option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
                   </select>
                 </div>
               ))}
+              {isMultiTee(selectedComp.format) && (
+                <div style={{fontSize:11,color:T.textDk,marginTop:6,fontStyle:"italic"}}>
+                  Add the tees in use — Men's and Women's variants if mixed-gender. Players are then assigned to one when added.
+                </div>
+              )}
             </div>
           )}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
