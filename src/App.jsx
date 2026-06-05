@@ -25,18 +25,20 @@ const T = {
 const FORMAT_LABEL = {
   scramble: "Scramble",
   stableford_b3of4: "Stableford – Best 3 of 4",
+  champagne_scramble: "Champagne Scramble",
   hole_points_race: "Hole Points Race",
 };
 const FORMAT_BADGE = {
   scramble:        { bg: T.amberLt, col: "#78350f" },
   stableford_b3of4:{ bg: "#dbeafe", col: "#1e3a8a" },
+  champagne_scramble:{ bg: "#fef3c7", col: "#92400e" },
   hole_points_race:{ bg: T.greenLt, col: "#14532d" },
 };
 const isSingleCourse = f => f === "scramble";
 // Stableford uses multi-course (one row per tee). Scramble = 1 course. hole_points_race = 1 per day.
-const isMultiTee  = f => f === "stableford_b3of4";
+const isMultiTee  = f => f === "stableford_b3of4" || f === "champagne_scramble";
 const isMultiDay  = f => f === "hole_points_race";
-const teamSize = f => (f === "scramble" || f === "stableford_b3of4") ? 4 : 2;
+const teamSize = f => (f === "scramble" || f === "stableford_b3of4" || f === "champagne_scramble") ? 4 : 2;
 
 const formatPill = f => {
   const b = FORMAT_BADGE[f] || { bg: T.navyLt, col: T.text };
@@ -327,7 +329,10 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
 }
 
 // ─── STABLEFORD LIVE SCORES (3 leaderboards + methodology) ───────────────────
-function StablefordLiveScores({ selectedComp, teams, players, scores, courses, compCourses }) {
+function StablefordLiveScores({ selectedComp, teams, players, scores, courses, compCourses, format }) {
+  const isChampagne = format === "champagne_scramble";
+  // Allowance: stableford TEAMS = 90% · champagne TEAMS = 100% (each player plays own ball from drive)
+  const teamsAllowance = isChampagne ? 1.0 : 0.9;
   // Build a map of course_id → resolved course object (with parsed holes array)
   const resolveCourse = (courseId) => {
     const c = courses.find(x => x.id === courseId);
@@ -354,7 +359,7 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
     const idx  = parseFloat(p.handicap);
     const pCourse = (p.course_id && resolveCourse(p.course_id)) || defaultCourse;
     const cHcp = courseHandicap(idx, pCourse);
-    const phpTeams = playingHcp(idx, pCourse, 0.9);
+    const phpTeams = playingHcp(idx, pCourse, teamsAllowance);
     const phpNett  = playingHcp(idx, pCourse, 1.0);
 
     let pTeams = 0, pNett = 0, pGross = 0, holesPlayed = 0;
@@ -384,6 +389,11 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
     let total = 0, holesScored = 0;
     // Iterate by hole index 0..17 (every course is 18 holes)
     for (let hIdx = 0; hIdx < 18; hIdx++) {
+      // For champagne: par from primary tee determines best-N (par 3 → 3, par 4/5 → 2)
+      // For stableford: always best 3 of 4
+      const teamPar = defaultCourse.holes[hIdx]?.par;
+      const bestN = isChampagne ? (teamPar === 3 ? 3 : 2) : 3;
+
       const pts = tpEnriched.map(p => {
         const sc = scores.find(s => s.team_id === team.id && s.player_slot === p.slot && s.hole_index === hIdx);
         if (!sc || sc.gross_score == null) return null;
@@ -392,8 +402,8 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
         return stbPts(sc.gross_score, h.par, strokesOn(p.php, h.si));
       }).filter(x => x !== null);
       if (pts.length > 0) {
-        const top3 = [...pts].sort((a,b) => b-a).slice(0, 3);
-        total += top3.reduce((s,x) => s+x, 0);
+        const topN = [...pts].sort((a,b) => b-a).slice(0, bestN);
+        total += topN.reduce((s,x) => s+x, 0);
         holesScored++;
       }
     }
@@ -415,7 +425,7 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
 
       {/* TEAMS */}
       <Card>
-        {lbHeader("🏆", "TEAMS", "90% Course Handicap · best 3 of 4 stableford points per hole", T.blue)}
+        {lbHeader(isChampagne ? "🥂" : "🏆", "TEAMS", isChampagne ? "100% Course HCP · best 2 of 4 par-4/5 · best 3 of 4 par-3 · drives ≥3 each" : "90% Course Handicap · best 3 of 4 stableford points per hole", T.blue)}
         <table>
           <thead><tr><th style={{width:60}}>Rank</th><th>Team</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:90}}>Players</th><th style={{textAlign:"center",width:100}}>Points</th></tr></thead>
           <tbody>
@@ -689,7 +699,7 @@ export default function AdminPortal() {
       const comp = res[0];
       if(isSingleCourse(newComp.format) && newComp.course_id)
         await sb.post("competition_courses",[{competition_id:comp.id,course_id:newComp.course_id,day:1}]);
-      if(newComp.format==="hole_points_race" || newComp.format==="stableford_b3of4"){
+      if(newComp.format==="hole_points_race" || newComp.format==="stableford_b3of4" || newComp.format==="champagne_scramble"){
         const links = (newComp.course_ids||[]).map((cid,i)=>cid?{competition_id:comp.id,course_id:cid,day:i+1}:null).filter(Boolean);
         if(links.length>0) await sb.post("competition_courses",links);
       }
@@ -1157,7 +1167,7 @@ export default function AdminPortal() {
               )}
 
               {/* SCORES TAB — format-aware */}
-              {compTab==="scores" && selectedComp.format === "stableford_b3of4" && (
+              {compTab==="scores" && (selectedComp.format === "stableford_b3of4" || selectedComp.format === "champagne_scramble") && (
                 <StablefordLiveScores
                   selectedComp={selectedComp}
                   teams={teams}
@@ -1165,9 +1175,10 @@ export default function AdminPortal() {
                   scores={scores}
                   courses={courses}
                   compCourses={compCourses}
+                  format={selectedComp.format}
                 />
               )}
-              {compTab==="scores" && selectedComp.format !== "stableford_b3of4" && (
+              {compTab==="scores" && selectedComp.format !== "stableford_b3of4" && selectedComp.format !== "champagne_scramble" && (
                 <Card>
                   <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontWeight:700}}>Live Scores — {selectedComp.name}</div>
                   <table>
@@ -1209,9 +1220,10 @@ export default function AdminPortal() {
           <Inp label="Competition Name" value={newComp.name} onChange={v=>setNewComp(p=>({...p,name:v}))} placeholder="e.g. Corporate Stableford 2026" required/>
           <Inp label="Location" value={newComp.location} onChange={v=>setNewComp(p=>({...p,location:v}))} placeholder="e.g. Castle Golf Club, Dublin"/>
           <Sel label="Format" value={newComp.format} onChange={v=>setNewComp(p=>({...p,format:v}))} options={[
-            {value:"scramble",         label:"Scramble — one ball, team of 4, drive tracker"},
-            {value:"stableford_b3of4", label:"Stableford – Best 3 of 4 — individual stableford, best 3 count per hole"},
-            {value:"hole_points_race", label:"Hole Points Race — wRyder Cup style"},
+            {value:"scramble",          label:"Scramble — one ball, team of 4, drive tracker"},
+            {value:"stableford_b3of4",  label:"Stableford – Best 3 of 4 — individual stableford, best 3 count per hole"},
+            {value:"champagne_scramble",label:"Champagne Scramble — best drive then each plays own ball, best 2 of 4 (par 4/5) / best 3 of 4 (par 3)"},
+            {value:"hole_points_race",  label:"Hole Points Race — wRyder Cup style"},
           ]}/>
           <Inp label="Notes (optional)" value={newComp.notes} onChange={v=>setNewComp(p=>({...p,notes:v}))} placeholder="Any notes..."/>
           {isSingleCourse(newComp.format)&&(
@@ -1230,6 +1242,27 @@ export default function AdminPortal() {
                 </div>
               ))}
             </div>
+          )}
+          {newComp.format==="champagne_scramble"&&(
+            <>
+              <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:11.5,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
+                🥂 <strong style={{color:T.text}}>Champagne Scramble</strong>: everyone tees off, team picks the best drive, then each plays their own ball from there. Each player's gross → stableford at 100% Course HCP using their own tee.<br/>
+                Team total per hole: <strong>Par 3</strong> = best 3 of 4 · <strong>Par 4/5</strong> = best 2 of 4. Every player must contribute ≥3 drives.<br/>
+                Three leaderboards: <strong>TEAMS</strong>, <strong>Player Nett</strong> (100%), <strong>Player Gross</strong> (scratch).
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:T.textMd,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Tees in play — assign each player to one</label>
+                {[0,1,2,3,4,5,6,7].map(idx=>(
+                  <div key={idx} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.textMd,width:48,flexShrink:0}}>Tee {idx+1}</div>
+                    <select value={newComp.course_ids[idx]||""} onChange={e=>{const ids=[...newComp.course_ids];ids[idx]=e.target.value;setNewComp(p=>({...p,course_ids:ids}));}} style={{flex:1,background:T.input,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",color:T.text,fontSize:13,fontFamily:"inherit",outline:"none"}}>
+                      <option value="">— Optional —</option>
+                      {courses.map(c=><option key={c.id} value={c.id}>{c.name} (Par {c.par} · CR {c.rating} · Slope {c.slope})</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
           {newComp.format==="stableford_b3of4"&&(
             <>
