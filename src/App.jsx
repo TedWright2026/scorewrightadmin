@@ -332,8 +332,8 @@ function AuctionTab({auctionItems, auctionBids, onToggleClose, onDelete, onAdd, 
 // ─── STABLEFORD LIVE SCORES (3 leaderboards + methodology) ───────────────────
 function StablefordLiveScores({ selectedComp, teams, players, scores, courses, compCourses, format }) {
   const isChampagne = format === "champagne_scramble";
-  // Allowance: stableford TEAMS = 90% · champagne TEAMS = 100% (each player plays own ball from drive)
-  const teamsAllowance = isChampagne ? 1.0 : 0.9;
+  // Allowance: TEAMS uses 90% Course HCP for both Stableford and Champagne (committee rule)
+  const teamsAllowance = 0.9;
   // Build a map of course_id → resolved course object (with parsed holes array)
   const resolveCourse = (courseId) => {
     const c = courses.find(x => x.id === courseId);
@@ -361,7 +361,8 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
     const pCourse = (p.course_id && resolveCourse(p.course_id)) || defaultCourse;
     const cHcp = courseHandicap(idx, pCourse);
     const phpTeams = playingHcp(idx, pCourse, teamsAllowance);
-    const phpNett  = playingHcp(idx, pCourse, 1.0);
+    // Player Nett allowance — champagne uses 90% (committee), stableford uses 100% (individual)
+    const phpNett  = playingHcp(idx, pCourse, isChampagne ? 0.9 : 1.0);
 
     let pTeams = 0, pNett = 0, pGross = 0, holesPlayed = 0;
     pCourse.holes.forEach((h, hIdx) => {
@@ -436,7 +437,7 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
 
       {/* TEAMS */}
       <Card>
-        {lbHeader(isChampagne ? "🥂" : "🏆", "TEAMS — Gross + Nett", isChampagne ? "100% Course HCP · best 2 of 4 par-4/5 · best 3 of 4 par-3 · drives ≥3 each · sorted by Nett" : "90% Course Handicap · best 3 of 4 stableford points per hole · sorted by Nett", T.blue)}
+        {lbHeader(isChampagne ? "🥂" : "🏆", "TEAMS — Gross + Nett", isChampagne ? "90% Course HCP · best 2 of 4 par-4/5 · best 3 of 4 par-3 · drives ≥3 each · sorted by Nett" : "90% Course Handicap · best 3 of 4 stableford points per hole · sorted by Nett", T.blue)}
         <table>
           <thead><tr><th style={{width:60}}>Rank</th><th>Team</th><th style={{textAlign:"center",width:70}}>Holes</th><th style={{textAlign:"center",width:80}}>Players</th><th style={{textAlign:"center",width:80}}>Gross</th><th style={{textAlign:"center",width:80}}>Nett</th></tr></thead>
           <tbody>
@@ -458,7 +459,7 @@ function StablefordLiveScores({ selectedComp, teams, players, scores, courses, c
 
       {/* PLAYER NETT */}
       <Card>
-        {lbHeader("👤", "Player Nett", "100% Course Handicap · individual stableford", T.navyMd)}
+        {lbHeader("👤", "Player Nett", isChampagne ? "90% Course Handicap · individual stableford" : "100% Course Handicap · individual stableford", T.navyMd)}
         <table>
           <thead><tr><th style={{width:60}}>Rank</th><th>Player</th><th>Team</th><th style={{width:90}}>Tee</th><th style={{textAlign:"center",width:60}}>Idx</th><th style={{textAlign:"center",width:60}}>Crs</th><th style={{textAlign:"center",width:70}}>Play</th><th style={{textAlign:"center",width:80}}>Holes</th><th style={{textAlign:"center",width:80}}>Points</th></tr></thead>
           <tbody>
@@ -1258,7 +1259,7 @@ export default function AdminPortal() {
           {newComp.format==="champagne_scramble"&&(
             <>
               <div style={{padding:"10px 14px",background:T.navyMd,borderRadius:8,fontSize:11.5,color:T.textMd,marginBottom:14,lineHeight:1.6}}>
-                🥂 <strong style={{color:T.text}}>Champagne Scramble</strong>: everyone tees off, team picks the best drive, then each plays their own ball from there. Each player's gross → stableford at 100% Course HCP using their own tee.<br/>
+                🥂 <strong style={{color:T.text}}>Champagne Scramble</strong>: everyone tees off, team picks the best drive, then each plays their own ball from there. Each player's gross → stableford at 90% Course HCP using their own tee.<br/>
                 Team total per hole: <strong>Par 3</strong> = best 3 of 4 · <strong>Par 4/5</strong> = best 2 of 4. Every player must contribute ≥3 drives.<br/>
                 Three leaderboards: <strong>TEAMS</strong>, <strong>Player Nett</strong> (100%), <strong>Player Gross</strong> (scratch).
               </div>
